@@ -1,0 +1,326 @@
+digital-wellbeing-project/
+│
+├── README.md                          # Project overview and setup instructions
+├── requirements.txt                   # Python dependencies
+├── .gitignore                        # Git ignore file
+│
+├── data/                             # All data files
+│   ├── raw/                          # Raw data from sources
+│   │   ├── kaggle/                   # Downloaded Kaggle datasets
+│   │   │   └── screen_time_data.csv
+│   │   ├── personal/                 # Your personal usage data
+│   │   │   └── my_usage.csv
+│   │   └── beta_users/               # Beta tester data
+│   │       ├── user_001.csv
+│   │       └── user_002.csv
+│   │
+│   ├── processed/                    # Cleaned and processed data
+│   │   ├── synthetic_data.csv        # Generated synthetic data
+│   │   ├── combined_data.csv         # All data combined
+│   │   └── rl_training_data.npz      # Preprocessed for RL (numpy format)
+│   │
+│   └── exports/                      # Data exports and backups
+│       └── backup_2025_10_09.csv
+│
+├── src/                              # Source code
+│   ├── __init__.py
+│   │
+│   ├── data_generation/              # Data generation scripts
+│   │   ├── __init__.py
+│   │   ├── synthetic_generator.py    # Generate synthetic data
+│   │   ├── kaggle_loader.py          # Load and preprocess Kaggle data
+│   │   └── data_combiner.py          # Combine multiple data sources
+│   │
+│   ├── preprocessing/                # Data preprocessing
+│   │   ├── __init__.py
+│   │   ├── cleaner.py                # Data cleaning functions
+│   │   ├── feature_engineering.py    # Create RL features
+│   │   └── data_validator.py         # Validate data quality
+│   │
+│   ├── models/                       # RL models
+│   │   ├── __init__.py
+│   │   ├── q_learning.py             # Q-Learning implementation
+│   │   ├── dqn.py                    # Deep Q-Network (PyTorch)
+│   │   ├── environment.py            # RL environment simulation
+│   │   └── agent.py                  # RL agent logic
+│   │
+│   ├── training/                     # Training scripts
+│   │   ├── __init__.py
+│   │   ├── train_q_learning.py       # Train Q-Learning model
+│   │   ├── train_dqn.py              # Train DQN model
+│   │   └── hyperparameter_tuning.py  # Tune hyperparameters
+│   │
+│   ├── evaluation/                   # Model evaluation
+│   │   ├── __init__.py
+│   │   ├── metrics.py                # Evaluation metrics
+│   │   ├── visualizer.py             # Visualization tools
+│   │   └── compare_models.py         # Compare different models
+│   │
+│   ├── intervention/                 # Intervention strategies
+│   │   ├── __init__.py
+│   │   ├── delay_mechanism.py        # Implement delays (5s, 10s, 15s)
+│   │   ├── reminder_system.py        # Pop-up reminders
+│   │   └── adaptive_intervention.py  # RL-based adaptive interventions
+│   │
+│   └── utils/                        # Utility functions
+│       ├── __init__.py
+│       ├── config.py                 # Configuration settings
+│       ├── logger.py                 # Logging utilities
+│       └── helpers.py                # General helper functions
+│
+├── notebooks/                        # Jupyter notebooks for exploration
+│   ├── 01_data_exploration.ipynb     # Explore generated data
+│   ├── 02_eda_analysis.ipynb         # Exploratory Data Analysis
+│   ├── 03_model_experiments.ipynb    # Experiment with models
+│   └── 04_results_visualization.ipynb # Visualize results
+│
+├── models/                           # Saved trained models
+│   ├── checkpoints/                  # Training checkpoints
+│   │   ├── q_learning_epoch_10.pkl
+│   │   └── dqn_epoch_50.pth
+│   │
+│   ├── final/                        # Final trained models
+│   │   ├── q_learning_final.pkl
+│   │   └── dqn_final.pth
+│   │
+│   └── experiments/                  # Experimental models
+│       └── dqn_experiment_v2.pth
+│
+├── results/                          # Training results and logs
+│   ├── logs/                         # Training logs
+│   │   ├── training_2025_10_09.log
+│   │   └── tensorboard/              # TensorBoard logs
+│   │       └── runs/
+│   │
+│   ├── figures/                      # Generated plots and charts
+│   │   ├── reward_curve.png
+│   │   ├── loss_curve.png
+│   │   └── intervention_distribution.png
+│   │
+│   └── reports/                      # Analysis reports
+│       ├── model_comparison.pdf
+│       └── weekly_report_week1.md
+│
+├── tests/                            # Unit tests
+│   ├── __init__.py
+│   ├── test_data_generation.py
+│   ├── test_preprocessing.py
+│   ├── test_models.py
+│   └── test_environment.py
+│
+├── chrome_extension/                 # Chrome extension (future)
+│   ├── manifest.json
+│   ├── background/
+│   │   └── service-worker.js
+│   ├── content/
+│   │   ├── content-script.js
+│   │   └── styles.css
+│   ├── popup/
+│   │   ├── popup.html
+│   │   ├── popup.js
+│   │   └── popup.css
+│   └── dashboard/
+│       ├── dashboard.html
+│       └── dashboard.js
+│
+├── docs/                             # Documentation
+│   ├── architecture.md               # System architecture
+│   ├── data_schema.md                # Data format documentation
+│   ├── model_explanation.md          # How the RL model works
+│   ├── api_reference.md              # API documentation
+│   └── setup_guide.md                # Setup instructions
+│
+├── scripts/                          # Standalone scripts
+│   ├── generate_data.sh              # Generate all data
+│   ├── train_all_models.sh           # Train all models
+│   ├── evaluate_models.sh            # Evaluate models
+│   └── backup_data.sh                # Backup data script
+│
+└── config/                           # Configuration files
+    ├── data_config.yaml              # Data generation config
+    ├── model_config.yaml             # Model hyperparameters
+    └── training_config.yaml          # Training settings
+
+
+# File Examples:
+
+# ============================================================
+# requirements.txt
+# ============================================================
+numpy==1.24.3
+pandas==2.0.3
+torch==2.1.0
+matplotlib==3.7.2
+seaborn==0.12.2
+scikit-learn==1.3.0
+tensorboard==2.14.0
+pyyaml==6.0.1
+jupyter==1.0.0
+pytest==7.4.0
+tqdm==4.66.1
+
+
+# ============================================================
+# .gitignore
+# ============================================================
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+build/
+dist/
+*.egg-info/
+
+# Data files (don't commit large datasets)
+data/raw/kaggle/*.csv
+data/processed/*.csv
+data/processed/*.npz
+
+# Models (too large for git)
+models/checkpoints/*.pth
+models/checkpoints/*.pkl
+
+# Logs
+results/logs/*.log
+results/logs/tensorboard/
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+
+# ============================================================
+# README.md (Template)
+# ============================================================
+# Digital Wellbeing - RL-Based Screen Time Management
+
+## Overview
+An intelligent Chrome extension that uses Reinforcement Learning to help users 
+reduce time-wasting app usage through adaptive interventions.
+
+## Features
+- Synthetic data generation for training
+- Q-Learning and DQN models
+- Adaptive intervention strategies (delays, reminders)
+- Real-time usage tracking
+- Privacy-first design
+
+## Project Structure
+See folder structure above
+
+## Quick Start
+1. Clone repository
+2. Install dependencies: `pip install -r requirements.txt`
+3. Generate data: `python src/data_generation/synthetic_generator.py`
+4. Train model: `python src/training/train_dqn.py`
+5. Evaluate: `python src/evaluation/metrics.py`
+
+## Setup
+See `docs/setup_guide.md` for detailed instructions
+
+## Current Status
+- [x] Data generation pipeline
+- [x] Basic RL model (Q-Learning)
+- [ ] DQN implementation
+- [ ] Chrome extension
+- [ ] Beta testing
+
+## License
+MIT
+
+
+# ============================================================
+# src/utils/config.py (Example)
+# ============================================================
+"""
+Configuration settings for the project
+"""
+
+# Data Generation Settings
+DATA_CONFIG = {
+    'num_users': 100,
+    'days': 30,
+    'save_path': 'data/processed/synthetic_data.csv'
+}
+
+# Model Hyperparameters
+MODEL_CONFIG = {
+    'state_dim': 7,
+    'action_dim': 5,
+    'hidden_dim': 128,
+    'learning_rate': 0.001,
+    'gamma': 0.99,
+    'epsilon_start': 1.0,
+    'epsilon_end': 0.01,
+    'epsilon_decay': 0.995
+}
+
+# Training Settings
+TRAINING_CONFIG = {
+    'batch_size': 64,
+    'num_episodes': 1000,
+    'max_steps': 100,
+    'checkpoint_interval': 50,
+    'save_path': 'models/checkpoints/'
+}
+
+# Intervention Settings
+INTERVENTION_CONFIG = {
+    'delay_times': [0, 5, 10, 15],  # seconds
+    'reminder_types': ['gentle', 'strong', 'block'],
+    'adaptation_rate': 0.1
+}
+
+
+# ============================================================
+# scripts/setup_project.sh (Run this first!)
+# ============================================================
+#!/bin/bash
+
+echo "Setting up Digital Wellbeing Project..."
+
+# Create all directories
+mkdir -p data/{raw/{kaggle,personal,beta_users},processed,exports}
+mkdir -p src/{data_generation,preprocessing,models,training,evaluation,intervention,utils}
+mkdir -p notebooks
+mkdir -p models/{checkpoints,final,experiments}
+mkdir -p results/{logs/tensorboard/runs,figures,reports}
+mkdir -p tests
+mkdir -p chrome_extension/{background,content,popup,dashboard}
+mkdir -p docs
+mkdir -p scripts
+mkdir -p config
+
+# Create __init__.py files
+touch src/__init__.py
+touch src/data_generation/__init__.py
+touch src/preprocessing/__init__.py
+touch src/models/__init__.py
+touch src/training/__init__.py
+touch src/evaluation/__init__.py
+touch src/intervention/__init__.py
+touch src/utils/__init__.py
+touch tests/__init__.py
+
+# Create placeholder files
+touch data/raw/README.md
+touch models/README.md
+touch results/README.md
+
+echo "✓ Project structure created!"
+echo "Next: Run 'pip install -r requirements.txt'"
