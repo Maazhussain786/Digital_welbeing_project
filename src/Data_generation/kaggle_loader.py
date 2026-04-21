@@ -378,5 +378,15 @@ def main():
     return final_df
 
 
+def load_and_process_kaggle(output_csv: str = 'data/processed/kaggle_processed.csv'):
+    """Public entrypoint used by package imports and downstream scripts."""
+    loader = CustomKaggleLoader()
+    df2 = loader.load_dataset2()
+    df1 = loader.load_dataset1()
+    combined_df = loader.combine_datasets(df1, df2)
+    processed_df = loader.add_rl_features(combined_df)
+    return loader.save_processed_data(processed_df, filename=output_csv)
+
+
 if __name__ == "__main__":
     df = main()
