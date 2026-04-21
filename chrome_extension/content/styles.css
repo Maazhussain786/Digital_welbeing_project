@@ -1,0 +1,7 @@
+#dw-reminder-banner {
+  transition: opacity 0.2s ease;
+}
+
+#dw-intervention-overlay {
+  backdrop-filter: blur(2px);
+}

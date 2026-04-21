@@ -4,71 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <title>Digital Wellbeing</title>
-    <style>
-      :root {
-        --bg: #f7fafc;
-        --card: #ffffff;
-        --ink: #0f172a;
-        --muted: #475569;
-        --accent: #0f766e;
-      }
-      body {
-        margin: 0;
-        padding: 12px;
-        width: 320px;
-        background: radial-gradient(circle at top right, #d1fae5, var(--bg));
-        color: var(--ink);
-        font: 14px/1.4 "Segoe UI", Arial, sans-serif;
-      }
-      .card {
-        background: var(--card);
-        border-radius: 14px;
-        box-shadow: 0 8px 24px rgba(2, 6, 23, 0.12);
-        padding: 12px;
-      }
-      h1 {
-        margin: 0 0 6px;
-        font-size: 16px;
-      }
-      .muted {
-        color: var(--muted);
-      }
-      .stat {
-        font-size: 24px;
-        font-weight: 700;
-        margin: 6px 0 12px;
-      }
-      .row {
-        display: flex;
-        gap: 8px;
-        align-items: center;
-        justify-content: space-between;
-        margin-bottom: 8px;
-      }
-      input[type="number"] {
-        width: 90px;
-        padding: 6px;
-        border: 1px solid #cbd5e1;
-        border-radius: 8px;
-      }
-      button {
-        width: 100%;
-        margin-top: 8px;
-        border: 0;
-        border-radius: 10px;
-        padding: 10px;
-        background: var(--accent);
-        color: #fff;
-        font-weight: 700;
-        cursor: pointer;
-      }
-      ul {
-        margin: 8px 0 0;
-        padding-left: 18px;
-        max-height: 120px;
-        overflow: auto;
-      }
-    </style>
+    <link rel="stylesheet" href="popup.css">
   </head>
   <body>
     <div class="card">
@@ -89,6 +25,7 @@
         <input id="hard" type="number" min="10" step="5" value="120">
       </div>
       <button id="saveBtn">Save settings</button>
+      <a class="action-link" href="../dashboard/dashboard.html" target="_blank">Open Dashboard</a>
 
       <h3>Top domains</h3>
       <ul id="topDomains"></ul>
