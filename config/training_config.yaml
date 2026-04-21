@@ -1,0 +1,5 @@
+batch_size: 64
+num_episodes: 1000
+max_steps: 100
+checkpoint_interval: 50
+save_path: models/checkpoints/

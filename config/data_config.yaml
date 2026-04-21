@@ -1,0 +1,6 @@
+num_users: 100
+days: 30
+raw_sources:
+  - data/raw/kaggle/screentime_analysis.csv
+  - data/raw/kaggle/screen_time_app_usage_dataset.csv
+processed_output: data/processed/combined_data.csv
