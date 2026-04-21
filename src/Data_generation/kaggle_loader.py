@@ -7,6 +7,7 @@ import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
 import os
+from pathlib import Path
 
 class CustomKaggleLoader:
     """
@@ -14,6 +15,7 @@ class CustomKaggleLoader:
     """
     
     def __init__(self):
+        self.project_root = Path(__file__).resolve().parents[2]
         self.category_mapping = {
             'Social': 'social_media',
             'Entertainment': 'entertainment',
@@ -22,6 +24,13 @@ class CustomKaggleLoader:
             'Shopping': 'shopping',
             'News': 'news'
         }
+
+    def _resolve_path(self, filepath):
+        """Resolve relative paths from the project root to avoid cwd-dependent failures."""
+        path = Path(filepath)
+        if path.is_absolute():
+            return path
+        return self.project_root / path
     
     def load_dataset2(self, filepath='data/raw/kaggle/screen_time_app_usage_dataset.csv'):
         """
@@ -32,7 +41,8 @@ class CustomKaggleLoader:
         print("LOADING DATASET #2: screen_time_app_usage_dataset.csv")
         print("="*70)
         
-        df = pd.read_csv(filepath)
+        dataset_path = self._resolve_path(filepath)
+        df = pd.read_csv(dataset_path)
         
         print(f"\n✓ Loaded {len(df):,} rows")
         print(f"✓ Date range: {df['date'].min()} to {df['date'].max()}")
@@ -85,7 +95,8 @@ class CustomKaggleLoader:
         print("LOADING DATASET #1: screentime_analysis.csv")
         print("="*70)
         
-        df = pd.read_csv(filepath)
+        dataset_path = self._resolve_path(filepath)
+        df = pd.read_csv(dataset_path)
         
         print(f"\n✓ Loaded {len(df):,} rows")
         
@@ -168,7 +179,7 @@ class CustomKaggleLoader:
         df['time_since_last_session'] = df.groupby(
             'user_id'
         )['timestamp'].diff().dt.total_seconds() / 60
-        df['time_since_last_session'].fillna(120, inplace=True)
+        df['time_since_last_session'] = df['time_since_last_session'].fillna(120)
         
         # Encode categories numerically for RL
         category_encoding = {
@@ -295,17 +306,19 @@ class CustomKaggleLoader:
         print("SAVING PROCESSED DATA")
         print("="*70)
         
+        output_path = self._resolve_path(filename)
+
         # Create directory if doesn't exist
-        os.makedirs(os.path.dirname(filename), exist_ok=True)
+        os.makedirs(output_path.parent, exist_ok=True)
         
         # Save CSV
-        df.to_csv(filename, index=False)
-        print(f"\n✓ CSV saved to: {filename}")
+        df.to_csv(output_path, index=False)
+        print(f"\n✓ CSV saved to: {output_path}")
         
         # Generate and save numpy arrays
         states, actions, rewards, _ = self.generate_rl_training_data(df)
         
-        np_filename = filename.replace('.csv', '.npz')
+        np_filename = output_path.with_suffix('.npz')
         np.savez(
             np_filename,
             states=states,

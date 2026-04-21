@@ -5,15 +5,17 @@ Run: python inspect_kaggle_data.py
 
 import pandas as pd
 import os
-import glob
+from pathlib import Path
 
 def inspect_kaggle_data():
     print("="*70)
     print("KAGGLE DATA INSPECTION")
     print("="*70)
+
+    project_root = Path(__file__).resolve().parents[2]
     
     # Find all CSV files
-    csv_files = glob.glob('data/raw/kaggle/**/*.csv', recursive=True)
+    csv_files = [str(path) for path in (project_root / 'data' / 'raw' / 'kaggle').rglob('*.csv')]
     
     if not csv_files:
         print("\n❌ No CSV files found in data/raw/kaggle/")

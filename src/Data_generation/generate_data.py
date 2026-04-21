@@ -197,7 +197,7 @@ class DigitalWellbeingDataGenerator:
         
         # Time since last session (in minutes)
         df['time_since_last_session'] = df.groupby('user_id')['timestamp'].diff().dt.total_seconds() / 60
-        df['time_since_last_session'].fillna(120, inplace=True)  # Default 2 hours
+        df['time_since_last_session'] = df['time_since_last_session'].fillna(120)  # Default 2 hours
         
         # Is weekend
         df['is_weekend'] = (df['day_of_week'] >= 5).astype(int)
