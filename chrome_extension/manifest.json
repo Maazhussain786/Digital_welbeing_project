@@ -1,0 +1,22 @@
+{
+  "manifest_version": 3,
+  "name": "Digital Wellbeing Coach",
+  "version": "0.1.0",
+  "description": "Adaptive reminders and delays to reduce distracting browsing.",
+  "permissions": ["storage", "tabs"],
+  "host_permissions": ["<all_urls>"],
+  "background": {
+    "service_worker": "background/service-worker.js"
+  },
+  "action": {
+    "default_title": "Digital Wellbeing",
+    "default_popup": "popup/popup.html"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content/content-script.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}
