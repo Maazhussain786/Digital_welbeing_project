@@ -38,6 +38,12 @@ function renderSettings(settings) {
   document.getElementById("enabled").checked = Boolean(settings.enabled);
   document.getElementById("soft").value = Number(settings.softLimitMin || 45);
   document.getElementById("hard").value = Number(settings.hardLimitMin || 120);
+  document.getElementById("strictness").value = settings.strictness || "balanced";
+  document.getElementById("enableReminders").checked = settings.enableReminders !== false;
+  document.getElementById("enableGrayFilter").checked = settings.enableGrayFilter !== false;
+  document.getElementById("enableSlowMode").checked = settings.enableSlowMode !== false;
+  document.getElementById("enableShutterMode").checked = settings.enableShutterMode !== false;
+  document.getElementById("productiveDomains").value = (settings.productiveDomains || []).join(", ");
 }
 
 async function refresh() {
@@ -62,7 +68,13 @@ document.getElementById("saveBtn").addEventListener("click", () => {
   const payload = {
     enabled: document.getElementById("enabled").checked,
     softLimitMin: Number(document.getElementById("soft").value || 45),
-    hardLimitMin: Number(document.getElementById("hard").value || 120)
+    hardLimitMin: Number(document.getElementById("hard").value || 120),
+    strictness: document.getElementById("strictness").value,
+    enableReminders: document.getElementById("enableReminders").checked,
+    enableGrayFilter: document.getElementById("enableGrayFilter").checked,
+    enableSlowMode: document.getElementById("enableSlowMode").checked,
+    enableShutterMode: document.getElementById("enableShutterMode").checked,
+    productiveDomains: document.getElementById("productiveDomains").value
   };
 
   chrome.runtime.sendMessage({ type: "SAVE_SETTINGS", settings: payload }, (res) => {
@@ -78,6 +90,17 @@ document.getElementById("saveBtn").addEventListener("click", () => {
 document.getElementById("openDashboardBtn").addEventListener("click", () => {
   const dashboardUrl = chrome.runtime.getURL("dashboard/dashboard.html");
   chrome.tabs.create({ url: dashboardUrl });
+});
+
+document.getElementById("resetTodayBtn").addEventListener("click", () => {
+  chrome.runtime.sendMessage({ type: "RESET_TODAY" }, (res) => {
+    if (!res?.ok) {
+      setStatus("Failed to reset today data.", true);
+      return;
+    }
+    setStatus("Today data reset.");
+    refresh();
+  });
 });
 
 refresh();

@@ -56,6 +56,34 @@ input[type="number"] {
   border-radius: 8px;
 }
 
+select,
+textarea {
+  width: 100%;
+  padding: 7px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  box-sizing: border-box;
+  font: inherit;
+  color: var(--ink);
+  background: #fff;
+}
+
+textarea {
+  resize: vertical;
+  margin-bottom: 8px;
+}
+
+.label-block {
+  display: block;
+  margin: 10px 0 6px;
+  color: #1e293b;
+  font-weight: 600;
+}
+
+.check-row {
+  margin-bottom: 6px;
+}
+
 button,
 .action-link {
   width: 100%;
@@ -75,6 +103,10 @@ button,
 
 .action-link {
   background: #0f172a;
+}
+
+.danger-btn {
+  background: #991b1b;
 }
 
 ul {

@@ -24,8 +24,38 @@
         <label for="hard">Hard limit (min)</label>
         <input id="hard" type="number" min="10" step="5" value="120">
       </div>
+      <div class="row">
+        <label for="strictness">Mode</label>
+        <select id="strictness">
+          <option value="relaxed">Relaxed</option>
+          <option value="balanced" selected>Balanced</option>
+          <option value="strict">Strict</option>
+        </select>
+      </div>
+
+      <div class="row check-row">
+        <label for="enableReminders">Reminders</label>
+        <input id="enableReminders" type="checkbox" checked>
+      </div>
+      <div class="row check-row">
+        <label for="enableGrayFilter">Gray filter</label>
+        <input id="enableGrayFilter" type="checkbox" checked>
+      </div>
+      <div class="row check-row">
+        <label for="enableSlowMode">Slow interactions</label>
+        <input id="enableSlowMode" type="checkbox" checked>
+      </div>
+      <div class="row check-row">
+        <label for="enableShutterMode">Shutter lock</label>
+        <input id="enableShutterMode" type="checkbox" checked>
+      </div>
+
+      <label class="label-block" for="productiveDomains">Productive domains (comma-separated)</label>
+      <textarea id="productiveDomains" rows="3" placeholder="github.com, docs.google.com, notion.so"></textarea>
+
       <button id="saveBtn">Save settings</button>
       <button id="openDashboardBtn" class="action-link" type="button">Open Dashboard</button>
+      <button id="resetTodayBtn" class="danger-btn" type="button">Reset Today Data</button>
 
       <h3>Top domains</h3>
       <ul id="topDomains"></ul>
