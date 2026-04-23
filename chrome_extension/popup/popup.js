@@ -2,10 +2,40 @@ function toMinutes(seconds) {
   return Math.round((seconds || 0) / 60);
 }
 
+function normalizeDomainEntries(domains) {
+  return Object.entries(domains || {}).map(([domain, value]) => {
+    if (typeof value === "number") {
+      return { domain, seconds: Number(value || 0), productive: false };
+    }
+
+    return {
+      domain,
+      seconds: Number(value?.seconds || 0),
+      productive: Boolean(value?.productive)
+    };
+  });
+}
+
 function setStatus(text, isError = false) {
   const el = document.getElementById("status");
   el.textContent = text;
   el.style.color = isError ? "#b91c1c" : "#334155";
+}
+
+function sendRuntimeMessage(message, errorText, onOk) {
+  chrome.runtime.sendMessage(message, (response) => {
+    if (chrome.runtime.lastError) {
+      setStatus(`Background error: ${chrome.runtime.lastError.message}`, true);
+      return;
+    }
+
+    if (!response?.ok) {
+      setStatus(errorText, true);
+      return;
+    }
+
+    onOk(response);
+  });
 }
 
 function renderUsage(summary) {
@@ -13,8 +43,8 @@ function renderUsage(summary) {
   document.getElementById("dayLabel").textContent = `Date: ${summary?.day || "today"}`;
   document.getElementById("totalTime").textContent = `${toMinutes(usage.totalSeconds)} min`;
 
-  const top = Object.entries(usage.domains)
-    .sort((a, b) => b[1] - a[1])
+  const top = normalizeDomainEntries(usage.domains)
+    .sort((a, b) => b.seconds - a.seconds)
     .slice(0, 6);
 
   const ul = document.getElementById("topDomains");
@@ -27,9 +57,10 @@ function renderUsage(summary) {
     return;
   }
 
-  top.forEach(([domain, seconds]) => {
+  top.forEach((entry) => {
     const li = document.createElement("li");
-    li.textContent = `${domain} - ${toMinutes(seconds)} min`;
+    const label = entry.productive ? "productive" : "unproductive";
+    li.textContent = `${entry.domain} - ${toMinutes(entry.seconds)} min (${label})`;
     ul.appendChild(li);
   });
 }
@@ -47,25 +78,17 @@ function renderSettings(settings) {
 }
 
 async function refresh() {
-  chrome.runtime.sendMessage({ type: "GET_USAGE_SUMMARY" }, (summary) => {
-    if (!summary?.ok) {
-      setStatus("Failed to load usage.", true);
-      return;
-    }
+  sendRuntimeMessage({ type: "GET_USAGE_SUMMARY" }, "Failed to load usage.", (summary) => {
     renderUsage(summary);
   });
 
-  chrome.runtime.sendMessage({ type: "GET_SETTINGS" }, (res) => {
-    if (!res?.ok) {
-      setStatus("Failed to load settings.", true);
-      return;
-    }
+  sendRuntimeMessage({ type: "GET_SETTINGS" }, "Failed to load settings.", (res) => {
     renderSettings(res.settings);
   });
 
-  chrome.runtime.sendMessage({ type: "GET_FOCUS_STATE" }, (res) => {
+  sendRuntimeMessage({ type: "GET_FOCUS_STATE" }, "Failed to load focus sprint state.", (res) => {
     const el = document.getElementById("focusSprintStatus");
-    if (!res?.ok || !res.inFocusSprint) {
+    if (!res.inFocusSprint) {
       el.textContent = "Focus sprint is off.";
       return;
     }
@@ -88,11 +111,7 @@ document.getElementById("saveBtn").addEventListener("click", () => {
     productiveDomains: document.getElementById("productiveDomains").value
   };
 
-  chrome.runtime.sendMessage({ type: "SAVE_SETTINGS", settings: payload }, (res) => {
-    if (!res?.ok) {
-      setStatus("Could not save settings.", true);
-      return;
-    }
+  sendRuntimeMessage({ type: "SAVE_SETTINGS", settings: payload }, "Could not save settings.", () => {
     setStatus("Settings saved.");
     refresh();
   });
@@ -104,33 +123,21 @@ document.getElementById("openDashboardBtn").addEventListener("click", () => {
 });
 
 document.getElementById("startSprintBtn").addEventListener("click", () => {
-  chrome.runtime.sendMessage({ type: "START_FOCUS_SPRINT", minutes: 25 }, (res) => {
-    if (!res?.ok) {
-      setStatus("Could not start focus sprint.", true);
-      return;
-    }
+  sendRuntimeMessage({ type: "START_FOCUS_SPRINT", minutes: 25 }, "Could not start focus sprint.", () => {
     setStatus("Focus sprint started.");
     refresh();
   });
 });
 
 document.getElementById("cancelSprintBtn").addEventListener("click", () => {
-  chrome.runtime.sendMessage({ type: "CANCEL_FOCUS_SPRINT" }, (res) => {
-    if (!res?.ok) {
-      setStatus("Could not cancel focus sprint.", true);
-      return;
-    }
+  sendRuntimeMessage({ type: "CANCEL_FOCUS_SPRINT" }, "Could not cancel focus sprint.", () => {
     setStatus("Focus sprint cancelled.");
     refresh();
   });
 });
 
 document.getElementById("resetTodayBtn").addEventListener("click", () => {
-  chrome.runtime.sendMessage({ type: "RESET_TODAY" }, (res) => {
-    if (!res?.ok) {
-      setStatus("Failed to reset today data.", true);
-      return;
-    }
+  sendRuntimeMessage({ type: "RESET_TODAY" }, "Failed to reset today data.", () => {
     setStatus("Today data reset.");
     refresh();
   });
