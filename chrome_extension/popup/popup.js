@@ -62,6 +62,17 @@ async function refresh() {
     }
     renderSettings(res.settings);
   });
+
+  chrome.runtime.sendMessage({ type: "GET_FOCUS_STATE" }, (res) => {
+    const el = document.getElementById("focusSprintStatus");
+    if (!res?.ok || !res.inFocusSprint) {
+      el.textContent = "Focus sprint is off.";
+      return;
+    }
+
+    const until = new Date(res.focusSprintUntil).toLocaleTimeString();
+    el.textContent = `Focus sprint active until ${until}`;
+  });
 }
 
 document.getElementById("saveBtn").addEventListener("click", () => {
@@ -90,6 +101,28 @@ document.getElementById("saveBtn").addEventListener("click", () => {
 document.getElementById("openDashboardBtn").addEventListener("click", () => {
   const dashboardUrl = chrome.runtime.getURL("dashboard/dashboard.html");
   chrome.tabs.create({ url: dashboardUrl });
+});
+
+document.getElementById("startSprintBtn").addEventListener("click", () => {
+  chrome.runtime.sendMessage({ type: "START_FOCUS_SPRINT", minutes: 25 }, (res) => {
+    if (!res?.ok) {
+      setStatus("Could not start focus sprint.", true);
+      return;
+    }
+    setStatus("Focus sprint started.");
+    refresh();
+  });
+});
+
+document.getElementById("cancelSprintBtn").addEventListener("click", () => {
+  chrome.runtime.sendMessage({ type: "CANCEL_FOCUS_SPRINT" }, (res) => {
+    if (!res?.ok) {
+      setStatus("Could not cancel focus sprint.", true);
+      return;
+    }
+    setStatus("Focus sprint cancelled.");
+    refresh();
+  });
 });
 
 document.getElementById("resetTodayBtn").addEventListener("click", () => {

@@ -22,6 +22,7 @@ const PASSIVE_INTERVENTION_COOLDOWN_MS = 45 * 1000;
 const OVERRIDE_SNOOZE_MS = 15 * 60 * 1000;
 const lastInterventionByTab = new Map();
 const snoozeUntilByTab = new Map();
+let focusSprintUntil = 0;
 
 const CRITICAL_DOMAIN_SUFFIXES = [
   "accounts.google.com",
@@ -141,8 +142,14 @@ function evaluateIntervention(unproductiveSecondsToday, domainSecondsToday, sett
   }
 
   const factor = strictnessFactor(settings.strictness);
-  const soft = settings.softLimitMin * factor;
-  const hard = settings.hardLimitMin * factor;
+  let soft = settings.softLimitMin * factor;
+  let hard = settings.hardLimitMin * factor;
+
+  const inFocusSprint = Date.now() < focusSprintUntil;
+  if (inFocusSprint) {
+    soft = Math.min(soft, 20);
+    hard = Math.min(hard, 35);
+  }
 
   const totalMin = unproductiveSecondsToday / 60;
   const domainMin = domainSecondsToday / 60;
@@ -291,6 +298,24 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       }
 
       sendResponse({ ok: true, usage, intervention, domainIsProductive });
+      return;
+    }
+
+    if (message?.type === "GET_FOCUS_STATE") {
+      sendResponse({ ok: true, focusSprintUntil, inFocusSprint: Date.now() < focusSprintUntil });
+      return;
+    }
+
+    if (message?.type === "START_FOCUS_SPRINT") {
+      const minutes = Math.max(5, Number(message.minutes || 25));
+      focusSprintUntil = Date.now() + minutes * 60 * 1000;
+      sendResponse({ ok: true, focusSprintUntil, inFocusSprint: true });
+      return;
+    }
+
+    if (message?.type === "CANCEL_FOCUS_SPRINT") {
+      focusSprintUntil = 0;
+      sendResponse({ ok: true, focusSprintUntil, inFocusSprint: false });
       return;
     }
 

@@ -105,6 +105,14 @@ button,
   background: #0f172a;
 }
 
+#startSprintBtn {
+  background: #0f766e;
+}
+
+#cancelSprintBtn {
+  background: #475569;
+}
+
 .danger-btn {
   background: #991b1b;
 }
