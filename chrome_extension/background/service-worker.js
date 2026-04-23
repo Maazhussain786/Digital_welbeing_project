@@ -19,7 +19,18 @@ const DEFAULT_SETTINGS = {
 
 const INTERVENTION_COOLDOWN_MS = 2 * 60 * 1000;
 const PASSIVE_INTERVENTION_COOLDOWN_MS = 45 * 1000;
+const OVERRIDE_SNOOZE_MS = 15 * 60 * 1000;
 const lastInterventionByTab = new Map();
+const snoozeUntilByTab = new Map();
+
+const CRITICAL_DOMAIN_SUFFIXES = [
+  "accounts.google.com",
+  "pay.google.com",
+  "paypal.com",
+  "stripe.com",
+  "chase.com",
+  "bankofamerica.com"
+];
 
 function normalizeDomain(domain) {
   return (domain || "unknown").toLowerCase().replace(/^www\./, "");
@@ -54,6 +65,21 @@ function isProductiveDomain(domain, settings) {
   const normalized = normalizeDomain(domain);
   const productiveDomains = parseDomainList(settings.productiveDomains);
   return productiveDomains.some((allowed) => normalized === allowed || normalized.endsWith(`.${allowed}`));
+}
+
+function isCriticalDomain(domain) {
+  const normalized = normalizeDomain(domain);
+  return CRITICAL_DOMAIN_SUFFIXES.some((suffix) => normalized === suffix || normalized.endsWith(`.${suffix}`));
+}
+
+function isTabSnoozed(tabId) {
+  if (tabId === undefined) {
+    return false;
+  }
+
+  const now = Date.now();
+  const snoozeUntil = snoozeUntilByTab.get(tabId) || 0;
+  return snoozeUntil > now;
 }
 
 function todayKey() {
@@ -241,16 +267,20 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       const seconds = Math.max(1, Number(message.seconds || 5));
 
       const settings = await getSettings();
-      const domainIsProductive = isProductiveDomain(domain, settings);
+      const domainIsProductive = isProductiveDomain(domain, settings) || isCriticalDomain(domain);
       const usage = await updateUsage(domain, seconds, domainIsProductive);
 
       const domainSecondsToday = usage.domains[domain]?.seconds || 0;
-      const intervention = evaluateIntervention(
+      let intervention = evaluateIntervention(
         usage.unproductiveSeconds || 0,
         domainSecondsToday,
         settings,
         domainIsProductive
       );
+
+      if (isTabSnoozed(sender.tab?.id)) {
+        intervention = { mode: "none", reason: "tab-snoozed" };
+      }
 
       if (sender.tab?.id !== undefined && intervention.mode !== "none" && shouldIntervene(sender.tab.id, intervention.mode)) {
         await appendInterventionEvent(domain, intervention);
@@ -318,6 +348,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
 
     if (message?.type === "USER_OVERRIDE") {
+      if (sender.tab?.id !== undefined) {
+        snoozeUntilByTab.set(sender.tab.id, Date.now() + OVERRIDE_SNOOZE_MS);
+      }
       sendResponse({ ok: true });
       return;
     }
