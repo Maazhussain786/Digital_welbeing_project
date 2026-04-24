@@ -3,6 +3,8 @@ const REMINDER_ID = "dw-reminder-banner";
 
 let usageInterval = null;
 let replayingClick = false;
+let prayerCountdownInterval = null;
+let lastPrayerAudioKey = "";
 
 const effects = {
   grayLevel: 0,
@@ -18,6 +20,11 @@ function removeElement(id) {
   const el = document.getElementById(id);
   if (el) {
     el.remove();
+  }
+
+  if (id === OVERLAY_ID && prayerCountdownInterval) {
+    clearInterval(prayerCountdownInterval);
+    prayerCountdownInterval = null;
   }
 }
 
@@ -52,6 +59,10 @@ function showReminder() {
 }
 
 function showDelay(seconds) {
+  if (prayerCountdownInterval) {
+    clearInterval(prayerCountdownInterval);
+    prayerCountdownInterval = null;
+  }
   removeElement(OVERLAY_ID);
 
   const overlay = document.createElement("div");
@@ -89,6 +100,10 @@ function showDelay(seconds) {
 }
 
 function showShutter(holdSeconds = 12) {
+  if (prayerCountdownInterval) {
+    clearInterval(prayerCountdownInterval);
+    prayerCountdownInterval = null;
+  }
   removeElement(OVERLAY_ID);
   effects.lockActive = true;
 
@@ -176,6 +191,10 @@ function showShutter(holdSeconds = 12) {
 }
 
 function showBlock() {
+  if (prayerCountdownInterval) {
+    clearInterval(prayerCountdownInterval);
+    prayerCountdownInterval = null;
+  }
   removeElement(OVERLAY_ID);
 
   const overlay = document.createElement("div");
@@ -198,6 +217,98 @@ function showBlock() {
   card.appendChild(button);
   overlay.appendChild(card);
   document.body.appendChild(overlay);
+}
+
+function playAzanCue() {
+  try {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) {
+      return;
+    }
+
+    const ctx = new AudioCtx();
+    const notes = [294, 330, 392, 440, 392, 330, 294, 330, 392];
+    let when = ctx.currentTime + 0.1;
+
+    notes.forEach((freq, index) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = index % 2 === 0 ? "sine" : "triangle";
+      osc.frequency.setValueAtTime(freq, when);
+
+      gain.gain.setValueAtTime(0.0001, when);
+      gain.gain.exponentialRampToValueAtTime(0.07, when + 0.04);
+      gain.gain.exponentialRampToValueAtTime(0.0001, when + 0.42);
+
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(when);
+      osc.stop(when + 0.45);
+      when += 0.22;
+    });
+  } catch (_err) {
+    // No-op if audio playback fails.
+  }
+}
+
+function formatRemaining(ms) {
+  const total = Math.max(0, Math.ceil(ms / 1000));
+  const min = Math.floor(total / 60);
+  const sec = total % 60;
+  return `${String(min).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
+}
+
+function showPrayerLock(prayerName, untilMs) {
+  removeElement(OVERLAY_ID);
+  effects.lockActive = true;
+
+  const overlay = document.createElement("div");
+  overlay.id = OVERLAY_ID;
+  overlay.style.cssText = "position:fixed;inset:0;z-index:2147483647;background:rgba(7,12,21,.97);display:flex;align-items:center;justify-content:center;";
+
+  const card = document.createElement("div");
+  card.style.cssText = "width:min(92vw,470px);padding:28px;border-radius:16px;background:#0f172a;color:#e2e8f0;font-family:Arial,sans-serif;text-align:center;box-shadow:0 22px 40px rgba(0,0,0,.4);";
+
+  const title = document.createElement("h2");
+  title.textContent = `${prayerName || "Prayer"} time`;
+  title.style.margin = "0 0 10px";
+
+  const body = document.createElement("p");
+  body.textContent = "Pause everything, perform your Namaz, and come back with a clear mind.";
+  body.style.cssText = "margin:0 0 12px;color:#cbd5e1;";
+
+  const timer = document.createElement("div");
+  timer.style.cssText = "font-size:32px;font-weight:800;letter-spacing:0.05em;color:#93c5fd;";
+  timer.textContent = formatRemaining(Number(untilMs || Date.now()));
+
+  const note = document.createElement("div");
+  note.style.cssText = "margin-top:8px;font-size:12px;color:#94a3b8;";
+  note.textContent = "Asar and Maghrib lock window is active.";
+
+  card.appendChild(title);
+  card.appendChild(body);
+  card.appendChild(timer);
+  card.appendChild(note);
+  overlay.appendChild(card);
+  document.body.appendChild(overlay);
+
+  const prayerAudioKey = `${prayerName || "Prayer"}-${untilMs || 0}`;
+  if (prayerAudioKey !== lastPrayerAudioKey) {
+    playAzanCue();
+    lastPrayerAudioKey = prayerAudioKey;
+  }
+
+  prayerCountdownInterval = setInterval(() => {
+    const remainingMs = Number(untilMs || 0) - Date.now();
+    timer.textContent = formatRemaining(remainingMs);
+
+    if (remainingMs <= 0) {
+      clearInterval(prayerCountdownInterval);
+      prayerCountdownInterval = null;
+      effects.lockActive = false;
+      removeElement(OVERLAY_ID);
+    }
+  }, 1000);
 }
 
 function installSlowdownInterceptor() {
@@ -237,6 +348,7 @@ function handleIntervention(intervention) {
   if (!intervention || intervention.mode === "none") {
     clearPassiveEffects();
     effects.lockActive = false;
+    lastPrayerAudioKey = "";
     removeElement(OVERLAY_ID);
     return;
   }
@@ -277,6 +389,12 @@ function handleIntervention(intervention) {
   if (intervention.mode === "block") {
     setPassiveEffects(1, 1800);
     showBlock();
+    return;
+  }
+
+  if (intervention.mode === "prayer") {
+    setPassiveEffects(1, 1800);
+    showPrayerLock(intervention.prayerName || "Prayer", Number(intervention.until || Date.now() + 10 * 60 * 1000));
   }
 }
 

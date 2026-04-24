@@ -29,7 +29,7 @@ function setFocusPill(active) {
   pill.textContent = active ? "Focus on" : "Focus off";
 }
 
-function sendRuntimeMessage(message, errorText, onOk) {
+function sendRuntimeMessage(message, errorText, onOk, onError) {
   chrome.runtime.sendMessage(message, (response) => {
     if (chrome.runtime.lastError) {
       setStatus(`Background error: ${chrome.runtime.lastError.message}`, true);
@@ -37,7 +37,11 @@ function sendRuntimeMessage(message, errorText, onOk) {
     }
 
     if (!response?.ok) {
-      setStatus(errorText, true);
+      if (typeof onError === "function" && onError(response) === true) {
+        return;
+      }
+      const detail = response?.error ? ` (${response.error})` : "";
+      setStatus(`${errorText}${detail}`, true);
       return;
     }
 
@@ -201,6 +205,13 @@ function setManualIntentOverride(productive) {
       () => {
         setStatus("Auto intent restored for this domain.");
         refreshTabIntent();
+      },
+      (response) => {
+        if (response?.error === "unknown-message") {
+          setStatus("Reload extension once, then try Auto again.", true);
+          return true;
+        }
+        return false;
       }
     );
     return;
@@ -216,6 +227,13 @@ function setManualIntentOverride(productive) {
     () => {
       setStatus(productive ? "Marked as study domain." : "Marked as distraction domain.");
       refreshTabIntent();
+    },
+    (response) => {
+      if (response?.error === "unknown-message") {
+        setStatus("Reload extension once to use manual intent controls.", true);
+        return true;
+      }
+      return false;
     }
   );
 }
@@ -239,6 +257,17 @@ function refresh() {
 
     const until = new Date(res.focusSprintUntil).toLocaleTimeString();
     el.textContent = `Focus sprint active until ${until}`;
+  });
+
+  sendRuntimeMessage({ type: "GET_PRAYER_STATE" }, "Failed to load Namaz mode state.", (res) => {
+    const el = document.getElementById("prayerStatus");
+    if (!res.active) {
+      el.textContent = `Namaz mode: Asar ${res.asarTime}, Maghrib ${res.maghribTime}, ${res.durationMin}m lock.`;
+      return;
+    }
+
+    const until = new Date(res.until).toLocaleTimeString();
+    el.textContent = `${res.prayerName} lock active until ${until}.`;
   });
 
   refreshTabIntent();

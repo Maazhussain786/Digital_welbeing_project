@@ -14,13 +14,19 @@ const DEFAULT_SETTINGS = {
     "stackoverflow.com",
     "wikipedia.org",
     "developer.chrome.com"
-  ]
+  ],
+  prayerModeEnabled: true,
+  asarTime: "16:45",
+  maghribTime: "18:35",
+  prayerDurationMin: 15
 };
 
 const INTERVENTION_COOLDOWN_MS = 2 * 60 * 1000;
 const PASSIVE_INTERVENTION_COOLDOWN_MS = 45 * 1000;
 const OVERRIDE_SNOOZE_MS = 15 * 60 * 1000;
 const DOMAIN_OVERRIDE_STORE_KEY = "domainIntentOverrides";
+const PRAYER_RUNTIME_STORE_KEY = "prayerRuntime";
+const PRAYER_ALARM_NAME = "dw-prayer-minute-check";
 
 const lastInterventionByTab = new Map();
 const snoozeUntilByTab = new Map();
@@ -90,6 +96,11 @@ const DISTRACTION_KEYWORDS = [
   "gossip",
   "celebrity",
   "music video"
+];
+
+const PRAYER_ENTRIES = [
+  { key: "asar", label: "Asar", settingKey: "asarTime" },
+  { key: "maghrib", label: "Maghrib", settingKey: "maghribTime" }
 ];
 
 function normalizeDomain(domain) {
@@ -188,10 +199,54 @@ function todayKey() {
   return `${y}-${m}-${d}`;
 }
 
+function parseTimeToMinutes(timeValue) {
+  const match = String(timeValue || "").trim().match(/^(\d{1,2}):(\d{2})$/);
+  if (!match) {
+    return null;
+  }
+
+  const hour = Number(match[1]);
+  const minute = Number(match[2]);
+  if (hour < 0 || hour > 23 || minute < 0 || minute > 59) {
+    return null;
+  }
+
+  return hour * 60 + minute;
+}
+
+function minutesNow() {
+  const now = new Date();
+  return now.getHours() * 60 + now.getMinutes();
+}
+
+function normalizePrayerRuntime(runtime) {
+  const next = runtime || {};
+  return {
+    active: Boolean(next.active),
+    prayerKey: typeof next.prayerKey === "string" ? next.prayerKey : "",
+    prayerLabel: typeof next.prayerLabel === "string" ? next.prayerLabel : "",
+    until: Number(next.until || 0),
+    triggeredByDay: typeof next.triggeredByDay === "object" && next.triggeredByDay ? next.triggeredByDay : {}
+  };
+}
+
+function buildPrayerIntervention(runtime) {
+  const until = Number(runtime?.until || 0);
+  return {
+    mode: "prayer",
+    reason: "namaz-window",
+    prayerKey: runtime?.prayerKey || "",
+    prayerName: runtime?.prayerLabel || "Prayer",
+    until,
+    secondsRemaining: Math.max(0, Math.ceil((until - Date.now()) / 1000))
+  };
+}
+
 async function getSettings() {
   const { wellbeingSettings } = await chrome.storage.local.get("wellbeingSettings");
   const merged = { ...DEFAULT_SETTINGS, ...(wellbeingSettings || {}) };
   merged.productiveDomains = parseDomainList(merged.productiveDomains);
+  merged.prayerDurationMin = Math.min(15, Math.max(10, Number(merged.prayerDurationMin || 15)));
   return merged;
 }
 
@@ -206,6 +261,15 @@ async function getDomainOverrides() {
 
 async function setDomainOverrides(domainOverrides) {
   await chrome.storage.local.set({ [DOMAIN_OVERRIDE_STORE_KEY]: domainOverrides });
+}
+
+async function getPrayerRuntime() {
+  const { [PRAYER_RUNTIME_STORE_KEY]: prayerRuntime } = await chrome.storage.local.get(PRAYER_RUNTIME_STORE_KEY);
+  return normalizePrayerRuntime(prayerRuntime);
+}
+
+async function setPrayerRuntime(prayerRuntime) {
+  await chrome.storage.local.set({ [PRAYER_RUNTIME_STORE_KEY]: normalizePrayerRuntime(prayerRuntime) });
 }
 
 async function getUsageStore() {
@@ -410,9 +474,132 @@ async function appendInterventionEvent(domain, intervention) {
   await setInterventionLog(interventionLogByDate);
 }
 
+async function ensurePrayerAlarm() {
+  await chrome.alarms.create(PRAYER_ALARM_NAME, { periodInMinutes: 1 });
+}
+
+async function broadcastPrayerState(runtime) {
+  const intervention = runtime.active ? buildPrayerIntervention(runtime) : { mode: "none", reason: "prayer-ended" };
+  const tabs = await chrome.tabs.query({});
+
+  await Promise.all(
+    tabs.map(async (tab) => {
+      if (tab.id === undefined) {
+        return;
+      }
+
+      try {
+        await chrome.tabs.sendMessage(tab.id, {
+          type: "APPLY_INTERVENTION",
+          intervention
+        });
+      } catch (_err) {
+        // Ignore tabs without content script context.
+      }
+    })
+  );
+}
+
+function hasPrayerTriggered(runtime, day, prayerKey) {
+  return Boolean(runtime.triggeredByDay?.[day]?.[prayerKey]);
+}
+
+function markPrayerTriggered(runtime, day, prayerKey) {
+  runtime.triggeredByDay[day] = runtime.triggeredByDay[day] || {};
+  runtime.triggeredByDay[day][prayerKey] = true;
+
+  const onlyToday = {};
+  onlyToday[day] = runtime.triggeredByDay[day];
+  runtime.triggeredByDay = onlyToday;
+}
+
+async function activatePrayerLock(runtime, prayer, settings) {
+  const now = Date.now();
+  const durationMin = Math.min(15, Math.max(10, Number(settings.prayerDurationMin || 15)));
+  const day = todayKey();
+
+  runtime.active = true;
+  runtime.prayerKey = prayer.key;
+  runtime.prayerLabel = prayer.label;
+  runtime.until = now + durationMin * 60 * 1000;
+  markPrayerTriggered(runtime, day, prayer.key);
+
+  await setPrayerRuntime(runtime);
+  await broadcastPrayerState(runtime);
+}
+
+async function evaluatePrayerSchedule(settings) {
+  const runtime = await getPrayerRuntime();
+  const nowTs = Date.now();
+
+  if (runtime.active && runtime.until <= nowTs) {
+    runtime.active = false;
+    runtime.prayerKey = "";
+    runtime.prayerLabel = "";
+    runtime.until = 0;
+    await setPrayerRuntime(runtime);
+    await broadcastPrayerState(runtime);
+  }
+
+  if (!settings.prayerModeEnabled) {
+    return runtime;
+  }
+
+  if (runtime.active && runtime.until > nowTs) {
+    return runtime;
+  }
+
+  const nowMinutes = minutesNow();
+  const day = todayKey();
+
+  for (const prayer of PRAYER_ENTRIES) {
+    const scheduled = parseTimeToMinutes(settings[prayer.settingKey]);
+    if (scheduled === null) {
+      continue;
+    }
+
+    const inTriggerWindow = nowMinutes >= scheduled && nowMinutes <= scheduled + 1;
+    if (!inTriggerWindow) {
+      continue;
+    }
+
+    if (hasPrayerTriggered(runtime, day, prayer.key)) {
+      continue;
+    }
+
+    await activatePrayerLock(runtime, prayer, settings);
+    return runtime;
+  }
+
+  return runtime;
+}
+
+function isPrayerActive(runtime) {
+  return Boolean(runtime?.active) && Number(runtime?.until || 0) > Date.now();
+}
+
 chrome.runtime.onInstalled.addListener(async () => {
   const settings = await getSettings();
   await setSettings(settings);
+  await ensurePrayerAlarm();
+  await evaluatePrayerSchedule(settings);
+});
+
+chrome.runtime.onStartup.addListener(async () => {
+  const settings = await getSettings();
+  await ensurePrayerAlarm();
+  await evaluatePrayerSchedule(settings);
+});
+
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm?.name !== PRAYER_ALARM_NAME) {
+    return;
+  }
+
+  (async () => {
+    const settings = await getSettings();
+    await evaluatePrayerSchedule(settings);
+  })();
 });
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -422,6 +609,36 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       const seconds = Math.max(1, Number(message.seconds || 5));
 
       const settings = await getSettings();
+      const prayerRuntime = await evaluatePrayerSchedule(settings);
+
+      if (isPrayerActive(prayerRuntime)) {
+        const prayerIntervention = buildPrayerIntervention(prayerRuntime);
+
+        if (sender.tab?.id !== undefined) {
+          try {
+            await chrome.tabs.sendMessage(sender.tab.id, {
+              type: "APPLY_INTERVENTION",
+              intervention: prayerIntervention
+            });
+          } catch (_err) {
+            // Ignore tab race errors.
+          }
+        }
+
+        const day = todayKey();
+        const usageByDate = await getUsageStore();
+        const usage = usageByDate[day] || { totalSeconds: 0, productiveSeconds: 0, unproductiveSeconds: 0, domains: {} };
+
+        sendResponse({
+          ok: true,
+          usage,
+          intervention: prayerIntervention,
+          domainIsProductive: true,
+          classificationSource: "prayer-mode"
+        });
+        return;
+      }
+
       const intent = await classifyDomainIntent(domain, settings, {
         url: message.url || "",
         title: message.title || ""
@@ -442,7 +659,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
       if (sender.tab?.id !== undefined && intervention.mode !== "none" && shouldIntervene(sender.tab.id, intervention.mode)) {
         await appendInterventionEvent(domain, intervention);
-        chrome.tabs.sendMessage(sender.tab.id, {
+        await chrome.tabs.sendMessage(sender.tab.id, {
           type: "APPLY_INTERVENTION",
           intervention
         });
@@ -469,7 +686,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return;
     }
 
-    if (message?.type === "SET_DOMAIN_OVERRIDE") {
+    if (message?.type === "SET_DOMAIN_OVERRIDE" || message?.type === "SET_DOMAIN_INTENT") {
       const domain = normalizeDomain(message.domain || "unknown");
       const productive = Boolean(message.productive);
       const domainOverrides = await getDomainOverrides();
@@ -482,7 +699,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return;
     }
 
-    if (message?.type === "CLEAR_DOMAIN_OVERRIDE") {
+    if (message?.type === "CLEAR_DOMAIN_OVERRIDE" || message?.type === "CLEAR_DOMAIN_INTENT") {
       const domain = normalizeDomain(message.domain || "unknown");
       const domainOverrides = await getDomainOverrides();
       delete domainOverrides[domain];
@@ -491,10 +708,26 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return;
     }
 
-    if (message?.type === "GET_DOMAIN_OVERRIDE") {
+    if (message?.type === "GET_DOMAIN_OVERRIDE" || message?.type === "GET_DOMAIN_INTENT") {
       const domain = normalizeDomain(message.domain || "unknown");
       const domainOverrides = await getDomainOverrides();
       sendResponse({ ok: true, domain, override: domainOverrides[domain] || null });
+      return;
+    }
+
+    if (message?.type === "GET_PRAYER_STATE") {
+      const settings = await getSettings();
+      const runtime = await evaluatePrayerSchedule(settings);
+      sendResponse({
+        ok: true,
+        active: isPrayerActive(runtime),
+        prayerKey: runtime.prayerKey || "",
+        prayerName: runtime.prayerLabel || "",
+        until: Number(runtime.until || 0),
+        asarTime: settings.asarTime,
+        maghribTime: settings.maghribTime,
+        durationMin: settings.prayerDurationMin
+      });
       return;
     }
 
@@ -551,6 +784,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
 
     if (message?.type === "SAVE_SETTINGS") {
+      const current = await getSettings();
       const next = {
         enabled: Boolean(message.settings?.enabled),
         softLimitMin: Math.max(5, Number(message.settings?.softLimitMin || DEFAULT_SETTINGS.softLimitMin)),
@@ -562,7 +796,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         enableSlowMode: message.settings?.enableSlowMode ?? DEFAULT_SETTINGS.enableSlowMode,
         enableShutterMode: message.settings?.enableShutterMode ?? DEFAULT_SETTINGS.enableShutterMode,
         enableReminders: message.settings?.enableReminders ?? DEFAULT_SETTINGS.enableReminders,
-        productiveDomains: parseDomainList(message.settings?.productiveDomains)
+        productiveDomains: parseDomainList(message.settings?.productiveDomains),
+        prayerModeEnabled: message.settings?.prayerModeEnabled ?? current.prayerModeEnabled,
+        asarTime: message.settings?.asarTime ?? current.asarTime,
+        maghribTime: message.settings?.maghribTime ?? current.maghribTime,
+        prayerDurationMin: Math.min(15, Math.max(10, Number(message.settings?.prayerDurationMin || current.prayerDurationMin || 15)))
       };
       await setSettings(next);
       sendResponse({ ok: true, settings: next });
@@ -578,7 +816,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
 
     sendResponse({ ok: false, error: "unknown-message" });
-  })();
+  })().catch((error) => {
+    sendResponse({ ok: false, error: error?.message || "internal-error" });
+  });
 
   return true;
 });
