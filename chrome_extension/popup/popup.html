@@ -7,64 +7,98 @@
     <link rel="stylesheet" href="popup.css">
   </head>
   <body>
-    <div class="card">
-      <h1>Digital Wellbeing</h1>
-      <div class="muted" id="dayLabel">Today</div>
-      <div class="stat" id="totalTime">0 min</div>
+    <div class="ambient ambient-one"></div>
+    <div class="ambient ambient-two"></div>
 
-      <div class="row">
-        <label for="enabled">Enabled</label>
-        <input id="enabled" type="checkbox" checked>
-      </div>
-      <div class="row">
-        <label for="soft">Soft limit (min)</label>
-        <input id="soft" type="number" min="5" step="5" value="45">
-      </div>
-      <div class="row">
-        <label for="hard">Hard limit (min)</label>
-        <input id="hard" type="number" min="10" step="5" value="120">
-      </div>
-      <div class="row">
-        <label for="strictness">Mode</label>
-        <select id="strictness">
-          <option value="relaxed">Relaxed</option>
-          <option value="balanced" selected>Balanced</option>
-          <option value="strict">Strict</option>
-        </select>
-      </div>
+    <main class="popup-shell">
+      <header class="hero">
+        <div class="hero-top">
+          <p class="kicker">Digital Wellbeing Coach</p>
+          <span class="focus-pill off" id="focusPill">Focus off</span>
+        </div>
+        <div class="muted" id="dayLabel">Date: today</div>
+        <div class="hero-value" id="totalTime">0 min</div>
+        <div class="hero-caption">Tracked browsing today</div>
+        <div class="status-line muted" id="status"></div>
+      </header>
 
-      <div class="row check-row">
-        <label for="enableReminders">Reminders</label>
-        <input id="enableReminders" type="checkbox" checked>
-      </div>
-      <div class="row check-row">
-        <label for="enableGrayFilter">Gray filter</label>
-        <input id="enableGrayFilter" type="checkbox" checked>
-      </div>
-      <div class="row check-row">
-        <label for="enableSlowMode">Slow interactions</label>
-        <input id="enableSlowMode" type="checkbox" checked>
-      </div>
-      <div class="row check-row">
-        <label for="enableShutterMode">Shutter lock</label>
-        <input id="enableShutterMode" type="checkbox" checked>
-      </div>
+      <section class="panel intent-panel">
+        <div class="panel-title">Current Tab Intent</div>
+        <div class="current-domain" id="currentDomain">No active tab</div>
+        <div class="intent-row">
+          <span class="intent-badge is-unknown" id="currentIntentBadge">Unknown</span>
+          <span class="muted source-text" id="intentSource">Auto classification</span>
+        </div>
+        <div class="intent-actions">
+          <button id="markStudyBtn" type="button" class="chip success">Study</button>
+          <button id="markDistractBtn" type="button" class="chip warning">Distraction</button>
+          <button id="clearIntentBtn" type="button" class="chip neutral">Auto</button>
+        </div>
+      </section>
 
-      <label class="label-block" for="productiveDomains">Productive domains (comma-separated)</label>
-      <textarea id="productiveDomains" rows="3" placeholder="github.com, docs.google.com, notion.so"></textarea>
+      <section class="panel quick-panel">
+        <div class="panel-title">Top Domains</div>
+        <ul id="topDomains"></ul>
+      </section>
 
-      <button id="saveBtn">Save settings</button>
-      <button id="startSprintBtn" type="button">Start Focus Sprint (25m)</button>
-      <button id="cancelSprintBtn" type="button">Cancel Focus Sprint</button>
-      <button id="openDashboardBtn" class="action-link" type="button">Open Dashboard</button>
-      <button id="resetTodayBtn" class="danger-btn" type="button">Reset Today Data</button>
+      <section class="panel settings-panel">
+        <div class="panel-title">Wellbeing Settings</div>
 
-      <div class="muted" id="focusSprintStatus"></div>
+        <div class="row">
+          <label for="enabled">Enabled</label>
+          <input id="enabled" type="checkbox" checked>
+        </div>
+        <div class="row">
+          <label for="strictness">Mode</label>
+          <select id="strictness">
+            <option value="relaxed">Relaxed</option>
+            <option value="balanced" selected>Balanced</option>
+            <option value="strict">Strict</option>
+          </select>
+        </div>
+        <div class="row">
+          <label for="soft">Soft limit (min)</label>
+          <input id="soft" type="number" min="5" step="5" value="45">
+        </div>
+        <div class="row">
+          <label for="hard">Hard limit (min)</label>
+          <input id="hard" type="number" min="10" step="5" value="120">
+        </div>
 
-      <h3>Top domains</h3>
-      <ul id="topDomains"></ul>
-      <div class="muted" id="status"></div>
-    </div>
+        <div class="switch-grid">
+          <label class="switch-row" for="enableReminders">
+            <span>Reminders</span>
+            <input id="enableReminders" type="checkbox" checked>
+          </label>
+          <label class="switch-row" for="enableGrayFilter">
+            <span>Gray filter</span>
+            <input id="enableGrayFilter" type="checkbox" checked>
+          </label>
+          <label class="switch-row" for="enableSlowMode">
+            <span>Slow interactions</span>
+            <input id="enableSlowMode" type="checkbox" checked>
+          </label>
+          <label class="switch-row" for="enableShutterMode">
+            <span>Shutter lock</span>
+            <input id="enableShutterMode" type="checkbox" checked>
+          </label>
+        </div>
+
+        <label class="label-block" for="productiveDomains">Productive domains (comma-separated)</label>
+        <textarea id="productiveDomains" rows="3" placeholder="github.com, docs.google.com, notion.so"></textarea>
+
+        <button id="saveBtn" type="button" class="cta">Save settings</button>
+      </section>
+
+      <section class="panel control-panel">
+        <div class="panel-title">Focus Controls</div>
+        <button id="startSprintBtn" type="button" class="secondary">Start Focus Sprint (25m)</button>
+        <button id="cancelSprintBtn" type="button" class="secondary muted-btn">Cancel Focus Sprint</button>
+        <button id="openDashboardBtn" type="button" class="secondary">Open Dashboard</button>
+        <button id="resetTodayBtn" type="button" class="secondary danger-btn">Reset Today Data</button>
+        <div class="muted focus-note" id="focusSprintStatus">Focus sprint is off.</div>
+      </section>
+    </main>
 
     <script src="popup.js"></script>
   </body>
