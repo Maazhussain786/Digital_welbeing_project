@@ -20,6 +20,8 @@ const DEFAULT_SETTINGS = {
 const INTERVENTION_COOLDOWN_MS = 2 * 60 * 1000;
 const PASSIVE_INTERVENTION_COOLDOWN_MS = 45 * 1000;
 const OVERRIDE_SNOOZE_MS = 15 * 60 * 1000;
+const DOMAIN_OVERRIDE_STORE_KEY = "domainIntentOverrides";
+
 const lastInterventionByTab = new Map();
 const snoozeUntilByTab = new Map();
 let focusSprintUntil = 0;
@@ -31,6 +33,63 @@ const CRITICAL_DOMAIN_SUFFIXES = [
   "stripe.com",
   "chase.com",
   "bankofamerica.com"
+];
+
+const VIDEO_INTENT_DOMAINS = [
+  "youtube.com",
+  "m.youtube.com"
+];
+
+const AI_INTENT_DOMAINS = [
+  "chatgpt.com",
+  "chat.openai.com",
+  "aistudio.google.com",
+  "gemini.google.com",
+  "claude.ai",
+  "copilot.microsoft.com"
+];
+
+const STUDY_KEYWORDS = [
+  "study",
+  "lecture",
+  "tutorial",
+  "course",
+  "assignment",
+  "homework",
+  "exam",
+  "interview prep",
+  "coding",
+  "programming",
+  "python",
+  "javascript",
+  "math",
+  "physics",
+  "chemistry",
+  "biology",
+  "research",
+  "paper",
+  "documentation",
+  "api reference",
+  "notes",
+  "class"
+];
+
+const DISTRACTION_KEYWORDS = [
+  "shorts",
+  "reel",
+  "meme",
+  "compilation",
+  "prank",
+  "reaction",
+  "asmr",
+  "vlog",
+  "highlights",
+  "gaming stream",
+  "funny",
+  "drama",
+  "gossip",
+  "celebrity",
+  "music video"
 ];
 
 function normalizeDomain(domain) {
@@ -73,6 +132,44 @@ function isCriticalDomain(domain) {
   return CRITICAL_DOMAIN_SUFFIXES.some((suffix) => normalized === suffix || normalized.endsWith(`.${suffix}`));
 }
 
+function matchesIntentDomain(domain, candidates) {
+  const normalized = normalizeDomain(domain);
+  return candidates.some((suffix) => normalized === suffix || normalized.endsWith(`.${suffix}`));
+}
+
+function includesAnyKeyword(text, keywords) {
+  const lower = (text || "").toLowerCase();
+  return keywords.some((keyword) => lower.includes(keyword));
+}
+
+function inferIntentFromContext(domain, pageUrl, pageTitle) {
+  const contextText = `${pageTitle || ""} ${pageUrl || ""}`.toLowerCase();
+  const isVideoDomain = matchesIntentDomain(domain, VIDEO_INTENT_DOMAINS);
+  const isAiDomain = matchesIntentDomain(domain, AI_INTENT_DOMAINS);
+
+  if (!isVideoDomain && !isAiDomain) {
+    return { productive: null, source: "no-intent-domain" };
+  }
+
+  if (includesAnyKeyword(contextText, STUDY_KEYWORDS)) {
+    return { productive: true, source: "study-keywords" };
+  }
+
+  if (includesAnyKeyword(contextText, DISTRACTION_KEYWORDS)) {
+    return { productive: false, source: "distraction-keywords" };
+  }
+
+  if (isAiDomain) {
+    return { productive: true, source: "ai-assist-default" };
+  }
+
+  if ((pageUrl || "").toLowerCase().includes("/shorts/")) {
+    return { productive: false, source: "youtube-shorts" };
+  }
+
+  return { productive: null, source: "insufficient-context" };
+}
+
 function isTabSnoozed(tabId) {
   if (tabId === undefined) {
     return false;
@@ -84,7 +181,11 @@ function isTabSnoozed(tabId) {
 }
 
 function todayKey() {
-  return new Date().toISOString().slice(0, 10);
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, "0");
+  const d = String(now.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
 }
 
 async function getSettings() {
@@ -96,6 +197,15 @@ async function getSettings() {
 
 async function setSettings(settings) {
   await chrome.storage.local.set({ wellbeingSettings: settings });
+}
+
+async function getDomainOverrides() {
+  const { [DOMAIN_OVERRIDE_STORE_KEY]: domainOverrides } = await chrome.storage.local.get(DOMAIN_OVERRIDE_STORE_KEY);
+  return domainOverrides || {};
+}
+
+async function setDomainOverrides(domainOverrides) {
+  await chrome.storage.local.set({ [DOMAIN_OVERRIDE_STORE_KEY]: domainOverrides });
 }
 
 async function getUsageStore() {
@@ -114,6 +224,44 @@ async function getInterventionLog() {
 
 async function setInterventionLog(interventionLogByDate) {
   await chrome.storage.local.set({ interventionLogByDate });
+}
+
+async function classifyDomainIntent(domain, settings, context = {}) {
+  const normalized = normalizeDomain(domain);
+  const overrides = await getDomainOverrides();
+  const manual = overrides[normalized];
+
+  if (manual && typeof manual.productive === "boolean") {
+    return {
+      productive: manual.productive,
+      source: "manual-override",
+      domain: normalized
+    };
+  }
+
+  if (isCriticalDomain(normalized)) {
+    return {
+      productive: true,
+      source: "critical-domain",
+      domain: normalized
+    };
+  }
+
+  const inferred = inferIntentFromContext(normalized, context.url, context.title);
+  if (typeof inferred.productive === "boolean") {
+    return {
+      productive: inferred.productive,
+      source: inferred.source,
+      domain: normalized
+    };
+  }
+
+  const listBased = isProductiveDomain(normalized, settings);
+  return {
+    productive: listBased,
+    source: listBased ? "productive-list" : "default-unproductive",
+    domain: normalized
+  };
 }
 
 function shouldIntervene(tabId, mode) {
@@ -274,15 +422,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       const seconds = Math.max(1, Number(message.seconds || 5));
 
       const settings = await getSettings();
-      const domainIsProductive = isProductiveDomain(domain, settings) || isCriticalDomain(domain);
-      const usage = await updateUsage(domain, seconds, domainIsProductive);
+      const intent = await classifyDomainIntent(domain, settings, {
+        url: message.url || "",
+        title: message.title || ""
+      });
 
+      const usage = await updateUsage(domain, seconds, intent.productive);
       const domainSecondsToday = usage.domains[domain]?.seconds || 0;
       let intervention = evaluateIntervention(
         usage.unproductiveSeconds || 0,
         domainSecondsToday,
         settings,
-        domainIsProductive
+        intent.productive
       );
 
       if (isTabSnoozed(sender.tab?.id)) {
@@ -297,7 +448,53 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         });
       }
 
-      sendResponse({ ok: true, usage, intervention, domainIsProductive });
+      sendResponse({
+        ok: true,
+        usage,
+        intervention,
+        domainIsProductive: intent.productive,
+        classificationSource: intent.source
+      });
+      return;
+    }
+
+    if (message?.type === "CLASSIFY_CONTEXT") {
+      const domain = normalizeDomain(message.domain || "unknown");
+      const settings = await getSettings();
+      const intent = await classifyDomainIntent(domain, settings, {
+        url: message.url || "",
+        title: message.title || ""
+      });
+      sendResponse({ ok: true, ...intent });
+      return;
+    }
+
+    if (message?.type === "SET_DOMAIN_OVERRIDE") {
+      const domain = normalizeDomain(message.domain || "unknown");
+      const productive = Boolean(message.productive);
+      const domainOverrides = await getDomainOverrides();
+      domainOverrides[domain] = {
+        productive,
+        updatedAt: new Date().toISOString()
+      };
+      await setDomainOverrides(domainOverrides);
+      sendResponse({ ok: true, domain, productive });
+      return;
+    }
+
+    if (message?.type === "CLEAR_DOMAIN_OVERRIDE") {
+      const domain = normalizeDomain(message.domain || "unknown");
+      const domainOverrides = await getDomainOverrides();
+      delete domainOverrides[domain];
+      await setDomainOverrides(domainOverrides);
+      sendResponse({ ok: true, domain });
+      return;
+    }
+
+    if (message?.type === "GET_DOMAIN_OVERRIDE") {
+      const domain = normalizeDomain(message.domain || "unknown");
+      const domainOverrides = await getDomainOverrides();
+      sendResponse({ ok: true, domain, override: domainOverrides[domain] || null });
       return;
     }
 

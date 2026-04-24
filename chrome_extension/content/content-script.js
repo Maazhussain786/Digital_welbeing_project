@@ -288,6 +288,8 @@ function sendUsageTick() {
   chrome.runtime.sendMessage({
     type: "USAGE_TICK",
     domain: currentDomain(),
+    url: window.location.href,
+    title: document.title || "",
     seconds: 5,
     timestamp: Date.now()
   }, (response) => {

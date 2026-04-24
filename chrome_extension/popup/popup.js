@@ -19,7 +19,14 @@ function normalizeDomainEntries(domains) {
 function setStatus(text, isError = false) {
   const el = document.getElementById("status");
   el.textContent = text;
-  el.style.color = isError ? "#b91c1c" : "#334155";
+  el.classList.toggle("error", Boolean(isError));
+}
+
+function setFocusPill(active) {
+  const pill = document.getElementById("focusPill");
+  pill.classList.toggle("on", active);
+  pill.classList.toggle("off", !active);
+  pill.textContent = active ? "Focus on" : "Focus off";
 }
 
 function sendRuntimeMessage(message, errorText, onOk) {
@@ -38,6 +45,53 @@ function sendRuntimeMessage(message, errorText, onOk) {
   });
 }
 
+function setIntentButtonsDisabled(disabled) {
+  document.getElementById("markStudyBtn").disabled = disabled;
+  document.getElementById("markDistractBtn").disabled = disabled;
+  document.getElementById("clearIntentBtn").disabled = disabled;
+}
+
+let currentTabContext = null;
+
+function sourceLabel(source) {
+  const labels = {
+    "manual-override": "Manual override",
+    "study-keywords": "Study keywords",
+    "distraction-keywords": "Distraction keywords",
+    "ai-assist-default": "AI assistant default",
+    "youtube-shorts": "YouTube Shorts",
+    "productive-list": "Productive list",
+    "default-unproductive": "Default unproductive",
+    "critical-domain": "Critical domain"
+  };
+
+  return labels[source] || "Auto classification";
+}
+
+function renderIntentBadge(intent) {
+  const badge = document.getElementById("currentIntentBadge");
+  const source = document.getElementById("intentSource");
+
+  badge.classList.remove("is-productive", "is-unproductive", "is-unknown");
+
+  if (typeof intent?.productive !== "boolean") {
+    badge.classList.add("is-unknown");
+    badge.textContent = "Unknown";
+    source.textContent = "Unable to classify";
+    return;
+  }
+
+  if (intent.productive) {
+    badge.classList.add("is-productive");
+    badge.textContent = "Study";
+  } else {
+    badge.classList.add("is-unproductive");
+    badge.textContent = "Distraction";
+  }
+
+  source.textContent = sourceLabel(intent.source);
+}
+
 function renderUsage(summary) {
   const usage = summary?.usage || { totalSeconds: 0, domains: {} };
   document.getElementById("dayLabel").textContent = `Date: ${summary?.day || "today"}`;
@@ -52,15 +106,15 @@ function renderUsage(summary) {
 
   if (!top.length) {
     const li = document.createElement("li");
-    li.textContent = "No tracked browsing yet";
+    li.textContent = "No tracked browsing yet.";
     ul.appendChild(li);
     return;
   }
 
   top.forEach((entry) => {
     const li = document.createElement("li");
-    const label = entry.productive ? "productive" : "unproductive";
-    li.textContent = `${entry.domain} - ${toMinutes(entry.seconds)} min (${label})`;
+    const kind = entry.productive ? "study" : "distraction";
+    li.textContent = `${entry.domain}  -  ${toMinutes(entry.seconds)} min  -  ${kind}`;
     ul.appendChild(li);
   });
 }
@@ -77,7 +131,96 @@ function renderSettings(settings) {
   document.getElementById("productiveDomains").value = (settings.productiveDomains || []).join(", ");
 }
 
-async function refresh() {
+function getActiveTabContext(onReady) {
+  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+    if (chrome.runtime.lastError) {
+      setStatus(`Tab lookup failed: ${chrome.runtime.lastError.message}`, true);
+      onReady(null);
+      return;
+    }
+
+    const tab = tabs?.[0];
+    if (!tab?.url) {
+      onReady(null);
+      return;
+    }
+
+    try {
+      const parsed = new URL(tab.url);
+      onReady({
+        domain: parsed.hostname.replace(/^www\./, "").toLowerCase(),
+        url: tab.url,
+        title: tab.title || ""
+      });
+    } catch (_err) {
+      onReady(null);
+    }
+  });
+}
+
+function refreshTabIntent() {
+  getActiveTabContext((context) => {
+    currentTabContext = context;
+    const domainEl = document.getElementById("currentDomain");
+
+    if (!context) {
+      domainEl.textContent = "No active web tab";
+      setIntentButtonsDisabled(true);
+      renderIntentBadge(null);
+      return;
+    }
+
+    domainEl.textContent = context.domain;
+    setIntentButtonsDisabled(false);
+
+    sendRuntimeMessage(
+      {
+        type: "CLASSIFY_CONTEXT",
+        domain: context.domain,
+        url: context.url,
+        title: context.title
+      },
+      "Failed to classify current tab.",
+      (intent) => {
+        renderIntentBadge(intent);
+      }
+    );
+  });
+}
+
+function setManualIntentOverride(productive) {
+  if (!currentTabContext?.domain) {
+    setStatus("Open a website tab first.", true);
+    return;
+  }
+
+  if (productive === null) {
+    sendRuntimeMessage(
+      { type: "CLEAR_DOMAIN_OVERRIDE", domain: currentTabContext.domain },
+      "Could not clear tab intent.",
+      () => {
+        setStatus("Auto intent restored for this domain.");
+        refreshTabIntent();
+      }
+    );
+    return;
+  }
+
+  sendRuntimeMessage(
+    {
+      type: "SET_DOMAIN_OVERRIDE",
+      domain: currentTabContext.domain,
+      productive
+    },
+    "Could not set manual tab intent.",
+    () => {
+      setStatus(productive ? "Marked as study domain." : "Marked as distraction domain.");
+      refreshTabIntent();
+    }
+  );
+}
+
+function refresh() {
   sendRuntimeMessage({ type: "GET_USAGE_SUMMARY" }, "Failed to load usage.", (summary) => {
     renderUsage(summary);
   });
@@ -88,6 +231,7 @@ async function refresh() {
 
   sendRuntimeMessage({ type: "GET_FOCUS_STATE" }, "Failed to load focus sprint state.", (res) => {
     const el = document.getElementById("focusSprintStatus");
+    setFocusPill(Boolean(res.inFocusSprint));
     if (!res.inFocusSprint) {
       el.textContent = "Focus sprint is off.";
       return;
@@ -96,6 +240,8 @@ async function refresh() {
     const until = new Date(res.focusSprintUntil).toLocaleTimeString();
     el.textContent = `Focus sprint active until ${until}`;
   });
+
+  refreshTabIntent();
 }
 
 document.getElementById("saveBtn").addEventListener("click", () => {
@@ -115,6 +261,18 @@ document.getElementById("saveBtn").addEventListener("click", () => {
     setStatus("Settings saved.");
     refresh();
   });
+});
+
+document.getElementById("markStudyBtn").addEventListener("click", () => {
+  setManualIntentOverride(true);
+});
+
+document.getElementById("markDistractBtn").addEventListener("click", () => {
+  setManualIntentOverride(false);
+});
+
+document.getElementById("clearIntentBtn").addEventListener("click", () => {
+  setManualIntentOverride(null);
 });
 
 document.getElementById("openDashboardBtn").addEventListener("click", () => {

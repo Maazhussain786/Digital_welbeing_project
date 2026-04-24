@@ -2,6 +2,15 @@ function toMinutes(seconds) {
   return Math.round((seconds || 0) / 60);
 }
 
+function sendRuntimeMessage(message, onOk) {
+  chrome.runtime.sendMessage(message, (response) => {
+    if (chrome.runtime.lastError) {
+      return;
+    }
+    onOk(response || {});
+  });
+}
+
 function normalizeDomainEntries(domains) {
   return Object.entries(domains || {}).map(([domain, value]) => {
     if (typeof value === "number") {
@@ -68,10 +77,10 @@ function renderInterventions(payload) {
     });
 }
 
-chrome.runtime.sendMessage({ type: "GET_USAGE_SUMMARY" }, (summary) => {
+sendRuntimeMessage({ type: "GET_USAGE_SUMMARY" }, (summary) => {
   render(summary || {});
 });
 
-chrome.runtime.sendMessage({ type: "GET_INTERVENTION_LOG" }, (payload) => {
+sendRuntimeMessage({ type: "GET_INTERVENTION_LOG" }, (payload) => {
   renderInterventions(payload || {});
 });
