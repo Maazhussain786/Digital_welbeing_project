@@ -16,6 +16,7 @@ const DEFAULT_SETTINGS = {
     "developer.chrome.com"
   ],
   prayerModeEnabled: true,
+  prayerTimesSource: "api",
   asarTime: "16:45",
   maghribTime: "18:35",
   prayerDurationMin: 15
@@ -26,7 +27,12 @@ const PASSIVE_INTERVENTION_COOLDOWN_MS = 45 * 1000;
 const OVERRIDE_SNOOZE_MS = 15 * 60 * 1000;
 const DOMAIN_OVERRIDE_STORE_KEY = "domainIntentOverrides";
 const PRAYER_RUNTIME_STORE_KEY = "prayerRuntime";
+const PRAYER_TIMES_CACHE_STORE_KEY = "prayerTimesCache";
 const PRAYER_ALARM_NAME = "dw-prayer-minute-check";
+const PRAYER_TIMES_SOURCE_API = "api";
+const PRAYER_API_CITY = "Islamabad";
+const PRAYER_API_COUNTRY = "Pakistan";
+const PRAYER_API_METHOD = 1;
 
 const lastInterventionByTab = new Map();
 const snoozeUntilByTab = new Map();
@@ -199,8 +205,24 @@ function todayKey() {
   return `${y}-${m}-${d}`;
 }
 
+function dateKeyToAladhanFormat(dayKey) {
+  const [y, m, d] = String(dayKey || "").split("-");
+  if (!y || !m || !d) {
+    return null;
+  }
+  return `${d}-${m}-${y}`;
+}
+
+function extractHHMM(value) {
+  const match = String(value || "").match(/(\d{1,2}):(\d{2})/);
+  if (!match) {
+    return null;
+  }
+  return `${String(Number(match[1])).padStart(2, "0")}:${String(Number(match[2])).padStart(2, "0")}`;
+}
+
 function parseTimeToMinutes(timeValue) {
-  const match = String(timeValue || "").trim().match(/^(\d{1,2}):(\d{2})$/);
+  const match = String(timeValue || "").trim().match(/(\d{1,2}):(\d{2})/);
   if (!match) {
     return null;
   }
@@ -247,6 +269,7 @@ async function getSettings() {
   const merged = { ...DEFAULT_SETTINGS, ...(wellbeingSettings || {}) };
   merged.productiveDomains = parseDomainList(merged.productiveDomains);
   merged.prayerDurationMin = Math.min(15, Math.max(10, Number(merged.prayerDurationMin || 15)));
+  merged.prayerTimesSource = merged.prayerTimesSource === PRAYER_TIMES_SOURCE_API ? PRAYER_TIMES_SOURCE_API : "manual";
   return merged;
 }
 
@@ -272,6 +295,15 @@ async function setPrayerRuntime(prayerRuntime) {
   await chrome.storage.local.set({ [PRAYER_RUNTIME_STORE_KEY]: normalizePrayerRuntime(prayerRuntime) });
 }
 
+async function getPrayerTimesCache() {
+  const { [PRAYER_TIMES_CACHE_STORE_KEY]: cache } = await chrome.storage.local.get(PRAYER_TIMES_CACHE_STORE_KEY);
+  return cache || null;
+}
+
+async function setPrayerTimesCache(cache) {
+  await chrome.storage.local.set({ [PRAYER_TIMES_CACHE_STORE_KEY]: cache || null });
+}
+
 async function getUsageStore() {
   const { usageByDate } = await chrome.storage.local.get("usageByDate");
   return usageByDate || {};
@@ -288,6 +320,81 @@ async function getInterventionLog() {
 
 async function setInterventionLog(interventionLogByDate) {
   await chrome.storage.local.set({ interventionLogByDate });
+}
+
+async function fetchPrayerTimesFromApi(dayKey) {
+  const dateParam = dateKeyToAladhanFormat(dayKey);
+  if (!dateParam) {
+    throw new Error("invalid-date");
+  }
+
+  const params = new URLSearchParams({
+    city: PRAYER_API_CITY,
+    country: PRAYER_API_COUNTRY,
+    method: String(PRAYER_API_METHOD)
+  });
+
+  const url = `https://api.aladhan.com/v1/timingsByCity/${dateParam}?${params.toString()}`;
+  const response = await fetch(url, { method: "GET", cache: "no-store" });
+  if (!response.ok) {
+    throw new Error(`prayer-api-http-${response.status}`);
+  }
+
+  const payload = await response.json();
+  const timings = payload?.data?.timings || {};
+  const asarTime = extractHHMM(timings.Asr);
+  const maghribTime = extractHHMM(timings.Maghrib);
+
+  if (!asarTime || !maghribTime) {
+    throw new Error("prayer-api-missing-times");
+  }
+
+  return {
+    dayKey,
+    source: PRAYER_TIMES_SOURCE_API,
+    asarTime,
+    maghribTime,
+    fetchedAt: new Date().toISOString()
+  };
+}
+
+async function resolvePrayerTimes(settings) {
+  const dayKey = todayKey();
+  const fallback = {
+    dayKey,
+    source: "settings-fallback",
+    asarTime: settings.asarTime,
+    maghribTime: settings.maghribTime
+  };
+
+  if (settings.prayerTimesSource !== PRAYER_TIMES_SOURCE_API) {
+    return fallback;
+  }
+
+  const cached = await getPrayerTimesCache();
+  if (cached?.dayKey === dayKey && extractHHMM(cached.asarTime) && extractHHMM(cached.maghribTime)) {
+    return {
+      dayKey,
+      source: cached.source || PRAYER_TIMES_SOURCE_API,
+      asarTime: extractHHMM(cached.asarTime),
+      maghribTime: extractHHMM(cached.maghribTime)
+    };
+  }
+
+  try {
+    const fetched = await fetchPrayerTimesFromApi(dayKey);
+    await setPrayerTimesCache(fetched);
+    return fetched;
+  } catch (_err) {
+    await setPrayerTimesCache({
+      dayKey,
+      source: "settings-fallback",
+      asarTime: fallback.asarTime,
+      maghribTime: fallback.maghribTime,
+      fetchedAt: new Date().toISOString()
+    });
+    return fallback;
+  }
 }
 
 async function classifyDomainIntent(domain, settings, context = {}) {
@@ -530,6 +637,7 @@ async function activatePrayerLock(runtime, prayer, settings) {
 
 async function evaluatePrayerSchedule(settings) {
   const runtime = await getPrayerRuntime();
+  const prayerTimes = await resolvePrayerTimes(settings);
   const nowTs = Date.now();
 
   if (runtime.active && runtime.until <= nowTs) {
@@ -553,7 +661,7 @@ async function evaluatePrayerSchedule(settings) {
   const day = todayKey();
 
   for (const prayer of PRAYER_ENTRIES) {
-    const scheduled = parseTimeToMinutes(settings[prayer.settingKey]);
+    const scheduled = parseTimeToMinutes(prayerTimes[prayer.settingKey]);
     if (scheduled === null) {
       continue;
     }
@@ -718,15 +826,17 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message?.type === "GET_PRAYER_STATE") {
       const settings = await getSettings();
       const runtime = await evaluatePrayerSchedule(settings);
+      const prayerTimes = await resolvePrayerTimes(settings);
       sendResponse({
         ok: true,
         active: isPrayerActive(runtime),
         prayerKey: runtime.prayerKey || "",
         prayerName: runtime.prayerLabel || "",
         until: Number(runtime.until || 0),
-        asarTime: settings.asarTime,
-        maghribTime: settings.maghribTime,
-        durationMin: settings.prayerDurationMin
+        asarTime: prayerTimes.asarTime,
+        maghribTime: prayerTimes.maghribTime,
+        durationMin: settings.prayerDurationMin,
+        source: prayerTimes.source || "settings-fallback"
       });
       return;
     }
@@ -798,6 +908,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         enableReminders: message.settings?.enableReminders ?? DEFAULT_SETTINGS.enableReminders,
         productiveDomains: parseDomainList(message.settings?.productiveDomains),
         prayerModeEnabled: message.settings?.prayerModeEnabled ?? current.prayerModeEnabled,
+        prayerTimesSource: message.settings?.prayerTimesSource === PRAYER_TIMES_SOURCE_API
+          ? PRAYER_TIMES_SOURCE_API
+          : (current.prayerTimesSource || "manual"),
         asarTime: message.settings?.asarTime ?? current.asarTime,
         maghribTime: message.settings?.maghribTime ?? current.maghribTime,
         prayerDurationMin: Math.min(15, Math.max(10, Number(message.settings?.prayerDurationMin || current.prayerDurationMin || 15)))

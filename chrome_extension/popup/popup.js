@@ -367,13 +367,14 @@ function refresh() {
 
   sendRuntimeMessage({ type: "GET_PRAYER_STATE" }, "Failed to load Namaz mode state.", (res) => {
     const el = document.getElementById("prayerStatus");
+    const sourceLabel = res.source === "api" ? "API Islamabad" : "local fallback";
     if (!res.active) {
-      el.textContent = `Namaz mode: Asar ${res.asarTime}, Maghrib ${res.maghribTime}, ${res.durationMin}m lock.`;
+      el.textContent = `Namaz mode (${sourceLabel}): Asar ${res.asarTime}, Maghrib ${res.maghribTime}, ${res.durationMin}m lock.`;
       return;
     }
 
     const until = new Date(res.until).toLocaleTimeString();
-    el.textContent = `${res.prayerName} lock active until ${until}.`;
+    el.textContent = `${res.prayerName} lock active until ${until} (${sourceLabel}).`;
   });
 
   refreshTabIntent();
