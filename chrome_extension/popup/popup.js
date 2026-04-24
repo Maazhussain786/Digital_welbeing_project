@@ -56,6 +56,43 @@ function setIntentButtonsDisabled(disabled) {
 }
 
 let currentTabContext = null;
+let lastSettings = null;
+let intentApiUnsupported = false;
+
+const LOCAL_VIDEO_DOMAINS = ["youtube.com", "m.youtube.com"];
+const LOCAL_AI_DOMAINS = [
+  "chatgpt.com",
+  "chat.openai.com",
+  "aistudio.google.com",
+  "gemini.google.com",
+  "claude.ai",
+  "copilot.microsoft.com"
+];
+
+const LOCAL_STUDY_KEYWORDS = [
+  "study",
+  "lecture",
+  "tutorial",
+  "course",
+  "assignment",
+  "homework",
+  "exam",
+  "interview prep",
+  "coding",
+  "programming",
+  "documentation"
+];
+
+const LOCAL_DISTRACTION_KEYWORDS = [
+  "shorts",
+  "meme",
+  "prank",
+  "reaction",
+  "vlog",
+  "funny",
+  "gossip",
+  "music video"
+];
 
 function sourceLabel(source) {
   const labels = {
@@ -66,10 +103,61 @@ function sourceLabel(source) {
     "youtube-shorts": "YouTube Shorts",
     "productive-list": "Productive list",
     "default-unproductive": "Default unproductive",
-    "critical-domain": "Critical domain"
+    "critical-domain": "Critical domain",
+    "local-productive-list": "Local productive list",
+    "local-ai-default": "Local AI default",
+    "local-study-keywords": "Local study keywords",
+    "local-distraction-keywords": "Local distraction keywords",
+    "local-youtube-shorts": "Local YouTube Shorts",
+    "local-unknown": "Local fallback"
   };
 
   return labels[source] || "Auto classification";
+}
+
+function normalizeDomain(domain) {
+  return String(domain || "").toLowerCase().replace(/^www\./, "");
+}
+
+function domainMatches(domain, suffixes) {
+  const normalized = normalizeDomain(domain);
+  return (suffixes || []).some((suffix) => {
+    const target = normalizeDomain(suffix);
+    return normalized === target || normalized.endsWith(`.${target}`);
+  });
+}
+
+function includesAny(text, keywords) {
+  const lower = String(text || "").toLowerCase();
+  return keywords.some((kw) => lower.includes(kw));
+}
+
+function localClassifyIntent(context, settings) {
+  const domain = normalizeDomain(context?.domain || "");
+  const combined = `${context?.title || ""} ${context?.url || ""}`.toLowerCase();
+  const productiveDomains = (settings?.productiveDomains || []).map((item) => normalizeDomain(item));
+
+  if (domainMatches(domain, productiveDomains)) {
+    return { productive: true, source: "local-productive-list" };
+  }
+
+  if (includesAny(combined, LOCAL_STUDY_KEYWORDS)) {
+    return { productive: true, source: "local-study-keywords" };
+  }
+
+  if (includesAny(combined, LOCAL_DISTRACTION_KEYWORDS)) {
+    return { productive: false, source: "local-distraction-keywords" };
+  }
+
+  if (domainMatches(domain, LOCAL_AI_DOMAINS)) {
+    return { productive: true, source: "local-ai-default" };
+  }
+
+  if (domainMatches(domain, LOCAL_VIDEO_DOMAINS) && String(context?.url || "").toLowerCase().includes("/shorts/")) {
+    return { productive: false, source: "local-youtube-shorts" };
+  }
+
+  return { productive: null, source: "local-unknown" };
 }
 
 function renderIntentBadge(intent) {
@@ -124,6 +212,7 @@ function renderUsage(summary) {
 }
 
 function renderSettings(settings) {
+  lastSettings = settings || {};
   document.getElementById("enabled").checked = Boolean(settings.enabled);
   document.getElementById("soft").value = Number(settings.softLimitMin || 45);
   document.getElementById("hard").value = Number(settings.hardLimitMin || 120);
@@ -175,7 +264,7 @@ function refreshTabIntent() {
     }
 
     domainEl.textContent = context.domain;
-    setIntentButtonsDisabled(false);
+    setIntentButtonsDisabled(intentApiUnsupported);
 
     sendRuntimeMessage(
       {
@@ -186,13 +275,30 @@ function refreshTabIntent() {
       },
       "Failed to classify current tab.",
       (intent) => {
+        intentApiUnsupported = false;
+        setIntentButtonsDisabled(false);
         renderIntentBadge(intent);
+      },
+      (response) => {
+        if (response?.error === "unknown-message") {
+          intentApiUnsupported = true;
+          setIntentButtonsDisabled(true);
+          renderIntentBadge(localClassifyIntent(context, lastSettings));
+          setStatus("Local intent estimate active. Reload extension to enable tab intent controls.");
+          return true;
+        }
+        return false;
       }
     );
   });
 }
 
 function setManualIntentOverride(productive) {
+  if (intentApiUnsupported) {
+    setStatus("Reload extension to enable Study/Distraction buttons.", true);
+    return;
+  }
+
   if (!currentTabContext?.domain) {
     setStatus("Open a website tab first.", true);
     return;
