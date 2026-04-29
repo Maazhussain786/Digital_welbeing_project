@@ -17,6 +17,10 @@ RL-assisted digital wellbeing system with a Chrome extension pipeline for adapti
    python src/kaggle_loader_data.py
    ```
 
+## Extension Troubleshooting
+- If popup controls or Namaz mode seem outdated after a code change, reload the extension in `chrome://extensions`.
+- If YouTube audio is still playing during Namaz lock, make sure the tab has loaded with the extension content script (refresh the tab once after extension reload).
+
 ## 10-Phase Delivery Plan
 1. Foundation scaffold
 2. Data generation modules
