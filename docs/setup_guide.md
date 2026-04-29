@@ -20,3 +20,10 @@
 2. Enable Developer mode.
 3. Click Load unpacked.
 4. Select chrome_extension folder.
+5. After each update, click Reload on the extension card.
+
+## Namaz Mode Notes
+1. Namaz lock targets Asar and Maghrib windows.
+2. Prayer times are fetched daily from a public API for Islamabad, Pakistan.
+3. If API is unavailable, fallback times from settings are used.
+4. During active lock, all tabs with media are force-paused and playback is blocked until lock ends.
