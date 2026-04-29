@@ -5,6 +5,7 @@ let usageInterval = null;
 let replayingClick = false;
 let prayerCountdownInterval = null;
 let lastPrayerAudioKey = "";
+let prayerMediaGuardEnabled = false;
 
 const effects = {
   grayLevel: 0,
@@ -25,6 +26,37 @@ function removeElement(id) {
   if (id === OVERLAY_ID && prayerCountdownInterval) {
     clearInterval(prayerCountdownInterval);
     prayerCountdownInterval = null;
+  }
+}
+
+function forEachMediaElement(handler) {
+  const nodes = document.querySelectorAll("video, audio");
+  nodes.forEach((node) => {
+    try {
+      handler(node);
+    } catch (_err) {
+      // Ignore per-element errors.
+    }
+  });
+}
+
+function pauseAllMedia() {
+  forEachMediaElement((media) => {
+    media.pause();
+    media.muted = true;
+  });
+}
+
+function restoreMediaAfterPrayer() {
+  forEachMediaElement((media) => {
+    media.muted = false;
+  });
+}
+
+function setPrayerMediaGuard(enabled) {
+  prayerMediaGuardEnabled = Boolean(enabled);
+  if (!prayerMediaGuardEnabled) {
+    restoreMediaAfterPrayer();
   }
 }
 
@@ -259,6 +291,8 @@ function formatRemaining(ms) {
 }
 
 function showPrayerLock(prayerName, untilMs) {
+  setPrayerMediaGuard(true);
+  pauseAllMedia();
   removeElement(OVERLAY_ID);
   effects.lockActive = true;
 
@@ -299,6 +333,7 @@ function showPrayerLock(prayerName, untilMs) {
   }
 
   prayerCountdownInterval = setInterval(() => {
+    pauseAllMedia();
     const remainingMs = Number(untilMs || 0) - Date.now();
     timer.textContent = formatRemaining(remainingMs);
 
@@ -306,6 +341,7 @@ function showPrayerLock(prayerName, untilMs) {
       clearInterval(prayerCountdownInterval);
       prayerCountdownInterval = null;
       effects.lockActive = false;
+      setPrayerMediaGuard(false);
       removeElement(OVERLAY_ID);
     }
   }, 1000);
@@ -348,6 +384,7 @@ function handleIntervention(intervention) {
   if (!intervention || intervention.mode === "none") {
     clearPassiveEffects();
     effects.lockActive = false;
+    setPrayerMediaGuard(false);
     lastPrayerAudioKey = "";
     removeElement(OVERLAY_ID);
     return;
@@ -442,12 +479,27 @@ document.addEventListener("visibilitychange", () => {
 });
 
 chrome.runtime.onMessage.addListener((message) => {
-  if (message?.type !== "APPLY_INTERVENTION") {
+  if (message?.type === "FORCE_PRAYER_PAUSE") {
+    setPrayerMediaGuard(true);
+    pauseAllMedia();
     return;
   }
 
-  handleIntervention(message.intervention || { mode: "none" });
+  if (message?.type === "APPLY_INTERVENTION") {
+    handleIntervention(message.intervention || { mode: "none" });
+  }
 });
+
+document.addEventListener("play", (event) => {
+  if (!prayerMediaGuardEnabled) {
+    return;
+  }
+
+  const target = event.target;
+  if (target && typeof target.pause === "function") {
+    target.pause();
+  }
+}, true);
 
 installSlowdownInterceptor();
 startTracking();
