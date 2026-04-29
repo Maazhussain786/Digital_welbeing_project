@@ -19,7 +19,9 @@ const DEFAULT_SETTINGS = {
   prayerTimesSource: "api",
   asarTime: "16:45",
   maghribTime: "18:35",
-  prayerDurationMin: 15
+  prayerDurationMin: 15,
+  prayerAsarOffsetMin: 0,
+  prayerMaghribOffsetMin: 2
 };
 
 const INTERVENTION_COOLDOWN_MS = 2 * 60 * 1000;
@@ -33,6 +35,7 @@ const PRAYER_TIMES_SOURCE_API = "api";
 const PRAYER_API_CITY = "Islamabad";
 const PRAYER_API_COUNTRY = "Pakistan";
 const PRAYER_API_METHOD = 1;
+const PRAYER_TRIGGER_GRACE_MIN = 5;
 
 const lastInterventionByTab = new Map();
 const snoozeUntilByTab = new Map();
@@ -241,6 +244,20 @@ function minutesNow() {
   return now.getHours() * 60 + now.getMinutes();
 }
 
+function applyMinuteOffset(baseMinutes, offsetMin) {
+  if (baseMinutes === null || baseMinutes === undefined) {
+    return null;
+  }
+  const adjusted = Number(baseMinutes) + Number(offsetMin || 0);
+  if (adjusted < 0) {
+    return 0;
+  }
+  if (adjusted > 23 * 60 + 59) {
+    return 23 * 60 + 59;
+  }
+  return adjusted;
+}
+
 function normalizePrayerRuntime(runtime) {
   const next = runtime || {};
   return {
@@ -270,6 +287,8 @@ async function getSettings() {
   merged.productiveDomains = parseDomainList(merged.productiveDomains);
   merged.prayerDurationMin = Math.min(15, Math.max(10, Number(merged.prayerDurationMin || 15)));
   merged.prayerTimesSource = merged.prayerTimesSource === PRAYER_TIMES_SOURCE_API ? PRAYER_TIMES_SOURCE_API : "manual";
+  merged.prayerAsarOffsetMin = Math.min(10, Math.max(-10, Number(merged.prayerAsarOffsetMin ?? 0)));
+  merged.prayerMaghribOffsetMin = Math.min(10, Math.max(-10, Number(merged.prayerMaghribOffsetMin ?? 2)));
   return merged;
 }
 
@@ -600,6 +619,12 @@ async function broadcastPrayerState(runtime) {
           type: "APPLY_INTERVENTION",
           intervention
         });
+        if (runtime.active) {
+          await chrome.tabs.sendMessage(tab.id, {
+            type: "FORCE_PRAYER_PAUSE",
+            prayerKey: runtime.prayerKey || ""
+          });
+        }
       } catch (_err) {
         // Ignore tabs without content script context.
       }
@@ -661,12 +686,20 @@ async function evaluatePrayerSchedule(settings) {
   const day = todayKey();
 
   for (const prayer of PRAYER_ENTRIES) {
-    const scheduled = parseTimeToMinutes(prayerTimes[prayer.settingKey]);
+    const scheduledBase = parseTimeToMinutes(prayerTimes[prayer.settingKey]);
+    if (scheduledBase === null) {
+      continue;
+    }
+
+    const offsetMin = prayer.key === "asar"
+      ? Number(settings.prayerAsarOffsetMin || 0)
+      : Number(settings.prayerMaghribOffsetMin || 0);
+    const scheduled = applyMinuteOffset(scheduledBase, offsetMin);
     if (scheduled === null) {
       continue;
     }
 
-    const inTriggerWindow = nowMinutes >= scheduled && nowMinutes <= scheduled + 1;
+    const inTriggerWindow = nowMinutes >= scheduled && nowMinutes <= scheduled + PRAYER_TRIGGER_GRACE_MIN;
     if (!inTriggerWindow) {
       continue;
     }
@@ -836,7 +869,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         asarTime: prayerTimes.asarTime,
         maghribTime: prayerTimes.maghribTime,
         durationMin: settings.prayerDurationMin,
-        source: prayerTimes.source || "settings-fallback"
+        source: prayerTimes.source || "settings-fallback",
+        asarOffsetMin: settings.prayerAsarOffsetMin,
+        maghribOffsetMin: settings.prayerMaghribOffsetMin,
+        triggerGraceMin: PRAYER_TRIGGER_GRACE_MIN
       });
       return;
     }
@@ -913,7 +949,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           : (current.prayerTimesSource || "manual"),
         asarTime: message.settings?.asarTime ?? current.asarTime,
         maghribTime: message.settings?.maghribTime ?? current.maghribTime,
-        prayerDurationMin: Math.min(15, Math.max(10, Number(message.settings?.prayerDurationMin || current.prayerDurationMin || 15)))
+        prayerDurationMin: Math.min(15, Math.max(10, Number(message.settings?.prayerDurationMin || current.prayerDurationMin || 15))),
+        prayerAsarOffsetMin: Math.min(10, Math.max(-10, Number(message.settings?.prayerAsarOffsetMin ?? current.prayerAsarOffsetMin ?? 0))),
+        prayerMaghribOffsetMin: Math.min(10, Math.max(-10, Number(message.settings?.prayerMaghribOffsetMin ?? current.prayerMaghribOffsetMin ?? 2)))
       };
       await setSettings(next);
       sendResponse({ ok: true, settings: next });
